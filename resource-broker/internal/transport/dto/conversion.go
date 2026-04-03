@@ -48,6 +48,14 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 		},
 	}
 
+	//Correctly saves in the ClusterAdvertisement CRD the cost information
+	if dto.Cost != nil {
+		clusterAdv.Spec.Cost = &brokerv1alpha1.CostInfo{
+			Renewable:  dto.Cost.Renewable,
+			EnergyCost: dto.Cost.EnergyCost,
+		}
+	}
+
 	// CRITICAL: Preserve Reserved field from DTO if present (broker-managed)
 	if dto.Resources.Reserved != nil {
 		reserved, err := fromResourceQuantitiesDTO(*dto.Resources.Reserved)
@@ -72,6 +80,13 @@ func FromClusterAdvertisement(clusterAdv *brokerv1alpha1.ClusterAdvertisement) *
 			Allocated:   toResourceQuantitiesDTO(clusterAdv.Spec.Resources.Allocated),
 			Available:   toResourceQuantitiesDTO(clusterAdv.Spec.Resources.Available),
 		},
+	}
+
+	if clusterAdv.Spec.Cost != nil {
+		dto.Cost = &CostInfoDTO{
+			Renewable:  clusterAdv.Spec.Cost.Renewable,
+			EnergyCost: clusterAdv.Spec.Cost.EnergyCost,
+		}
 	}
 
 	// CRITICAL: Include Reserved field if present (broker-managed)

@@ -86,6 +86,8 @@ func main() {
 	var advertisementRequeueInterval time.Duration
 	var instructionPollInterval time.Duration
 	var kubeconfigsDir string
+	var renewable bool
+	var energyCost float64
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -116,6 +118,8 @@ func main() {
 	flag.DurationVar(&advertisementRequeueInterval, "advertisement-requeue-interval", 30*time.Second, "Interval for periodic advertisement updates")
 	flag.DurationVar(&instructionPollInterval, "instruction-poll-interval", 5*time.Second, "Interval for polling broker for provider instructions (0 to disable)")
 	flag.StringVar(&kubeconfigsDir, "kubeconfigs-dir", "", "Directory containing kubeconfig files for Liqo peering (enables automatic peering)")
+	flag.BoolVar(&renewable, "renewable", false, "Indicates if the cluster uses renewable energy")
+	flag.Float64Var(&energyCost, "energy-cost", 0.0, "The cost of energy (0-1 normalization recommended)")
 
 	opts := zap.Options{
 		Development: true,
@@ -330,6 +334,8 @@ func main() {
 			Name:      advertisementName,
 			Namespace: advertisementNamespace,
 		},
+		Renewable:  renewable,
+		EnergyCost: energyCost,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Advertisement")
 		os.Exit(1)

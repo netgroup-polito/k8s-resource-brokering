@@ -74,9 +74,17 @@ spec:
                   currency:
                     description: Currency for pricing
                     type: string
+                  energyCost:
+                    description: EnergyCost is the cost of energy (0-1 normalization
+                      recommended)
+                    type: number
                   memoryCost:
                     description: MemoryCost per GB per hour
                     type: string
+                  renewable:
+                    description: Renewable indicates if the cluster uses renewable
+                      energy
+                    type: boolean
                 type: object
               endpointURL:
                 description: EndpointURL is the API endpoint of the source cluster

@@ -13,7 +13,7 @@ CERT_DIR="$SCRIPT_DIR/../certs/agent2"
 KUBECONFIGS_DIR="$SCRIPT_DIR/../kubeconfigs"
 
 AGENT_ID="agent-cluster-2"
-BROKER_URL="https://localhost:8443"
+BROKER_URL="https://localhost:8444"
 
 echo "=============================================="
 echo "  Starting Liqo Resource Agent 2"
@@ -77,4 +77,6 @@ echo ""
     --health-probe-bind-address=:8083 \
     --metrics-bind-address=0 \
     --advertisement-requeue-interval=10s \
-    --kubeconfigs-dir="$KUBECONFIGS_DIR"
+    --kubeconfigs-dir="$KUBECONFIGS_DIR" \
+    --renewable=false \
+    --energy-cost=0.5

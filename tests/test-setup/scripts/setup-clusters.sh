@@ -104,11 +104,24 @@ if ! command -v liqoctl &> /dev/null; then
 else
     echo ""
     echo "[1/2] Installing Liqo on $AGENT1_CLUSTER..."
+    
+    # [NOTE]
+    # The original code has the line (that is still kept): liqoctl install --kubeconfig ... --cluster-name $AGENT1_CLUSTER
+    # In Liqo v1.1.2 the flag "--cluster-name" is removved and the installation on "kind" 
+    # requires the specific command "install kind". This is the correct version to uncomment:
+    # 
+    # liqoctl install kind --cluster-id $AGENT1_CLUSTER --kubeconfig "$KUBECONFIGS_DIR/$AGENT1_CLUSTER.kubeconfig" 2>&1 | tail -5
+    
     liqoctl install --kubeconfig "$KUBECONFIGS_DIR/$AGENT1_CLUSTER.kubeconfig" --cluster-name $AGENT1_CLUSTER 2>&1 | tail -5
     echo "  -> Liqo installed on $AGENT1_CLUSTER"
 
     echo ""
     echo "[2/2] Installing Liqo on $AGENT2_CLUSTER..."
+    
+    # [NOTE] 
+    # See comment above for the fix. Uncomment the line below to enable it:
+    # liqoctl install kind --cluster-id $AGENT2_CLUSTER --kubeconfig "$KUBECONFIGS_DIR/$AGENT2_CLUSTER.kubeconfig" 2>&1 | tail -5
+    
     liqoctl install --kubeconfig "$KUBECONFIGS_DIR/$AGENT2_CLUSTER.kubeconfig" --cluster-name $AGENT2_CLUSTER 2>&1 | tail -5
     echo "  -> Liqo installed on $AGENT2_CLUSTER"
 fi

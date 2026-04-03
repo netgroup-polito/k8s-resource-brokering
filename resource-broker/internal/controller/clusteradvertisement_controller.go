@@ -107,6 +107,20 @@ func (r *ClusterAdvertisementReconciler) Reconcile(ctx context.Context, req ctrl
 		"clusterID", clusterAdv.Spec.ClusterID,
 		"availableCPU", clusterAdv.Spec.Resources.Available.CPU.String(),
 		"availableMemory", clusterAdv.Spec.Resources.Available.Memory.String(),
+		//We used a function to get the cost information. This is because the cost information is optional in the CRD
+		//Otherwise, without the function, we would get a nil pointer dereference error (panic)
+		"energyCost", func() float64 {
+			if clusterAdv.Spec.Cost != nil {
+				return clusterAdv.Spec.Cost.EnergyCost
+			}
+			return 0.0
+		}(),
+		"renewable", func() bool {
+			if clusterAdv.Spec.Cost != nil {
+				return clusterAdv.Spec.Cost.Renewable
+			}
+			return false
+		}(),
 		"score", clusterAdv.Status.Score,
 		"active", clusterAdv.Status.Active)
 

@@ -23,6 +23,13 @@ func ToAdvertisementDTO(adv *rearv1alpha1.Advertisement) *AdvertisementDTO {
 		},
 	}
 
+	if adv.Spec.Cost != nil {
+		dto.Cost = &CostInfoDTO{
+			Renewable:  adv.Spec.Cost.Renewable,
+			EnergyCost: adv.Spec.Cost.EnergyCost,
+		}
+	}
+
 	return dto
 }
 

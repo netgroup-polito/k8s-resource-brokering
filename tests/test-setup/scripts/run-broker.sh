@@ -52,7 +52,7 @@ echo "=============================================="
 echo ""
 echo "Configuration:"
 echo "  Interface:  HTTP (REST API with mTLS)"
-echo "  Port:       8443"
+echo "  Port:       8444"
 echo "  Cert Path:  $CERT_DIR"
 echo "  Namespace:  default"
 echo ""
@@ -62,7 +62,7 @@ echo ""
 # Run broker with HTTP interface
 ./bin/broker \
     --broker-interface=http \
-    --http-port=8443 \
+    --http-port=8444 \
     --http-cert-path="$CERT_DIR" \
     --http-namespace=default \
     --health-probe-bind-address=:8081 \

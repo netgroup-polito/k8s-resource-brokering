@@ -8,7 +8,14 @@ type AdvertisementDTO struct {
 	ClusterID   string             `json:"clusterID"`
 	ClusterName string             `json:"clusterName"`
 	Resources   ResourceMetricsDTO `json:"resources"`
+	Cost        *CostInfoDTO       `json:"cost,omitempty"`
 	Timestamp   time.Time          `json:"timestamp"`
+}
+
+// CostInfoDTO represents cost information in a protocol-agnostic way
+type CostInfoDTO struct {
+	Renewable  bool    `json:"renewable"`
+	EnergyCost float64 `json:"energyCost"`
 }
 
 // ResourceMetricsDTO represents resource metrics in a protocol-agnostic way

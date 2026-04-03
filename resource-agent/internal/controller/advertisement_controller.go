@@ -49,6 +49,8 @@ type AdvertisementReconciler struct {
 	TargetKey            types.NamespacedName
 	RequeueInterval      time.Duration // Configurable requeue interval
 	InstructionNamespace string        // Namespace for ProviderInstruction CRDs
+	Renewable            bool          // Green energy flag
+	EnergyCost           float64       // Normalized cost (0-1)
 }
 
 // +kubebuilder:rbac:groups=rear.fluidos.eu,resources=advertisements,verbs=get;list;watch;create;update;patch;delete
@@ -98,6 +100,12 @@ func (r *AdvertisementReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	advertisement.Spec.ClusterID = clusterID
 	advertisement.Spec.Resources = *resourceData
 	advertisement.Spec.Timestamp = metav1.Now()
+
+	// Update cost information
+	advertisement.Spec.Cost = &rearv1alpha1.CostInfo{
+		Renewable:  r.Renewable,
+		EnergyCost: r.EnergyCost,
+	}
 
 	// Update the Advertisement resource
 	if err := r.Update(ctx, advertisement); err != nil {

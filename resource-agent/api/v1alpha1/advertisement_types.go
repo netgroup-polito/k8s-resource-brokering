@@ -83,6 +83,14 @@ type CostInfo struct {
 
 	// Currency for pricing
 	Currency string `json:"currency,omitempty"`
+
+	// Renewable indicates if the cluster uses renewable energy
+	// +optional
+	Renewable bool `json:"renewable,omitempty"`
+
+	// EnergyCost is the cost of energy (0-1 normalization recommended)
+	// +optional
+	EnergyCost float64 `json:"energyCost,omitempty"`
 }
 
 // AdvertisementStatus defines the observed state of Advertisement

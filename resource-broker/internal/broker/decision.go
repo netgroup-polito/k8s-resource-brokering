@@ -102,16 +102,24 @@ func (d *DecisionEngine) calculateScore(
 
 	memoryUtilization := 1.0 - ((availableMemory - requestedMemoryFloat) / allocatableMemory)
 
-	// Balanced score: prefer clusters with lower utilization (more headroom)
-	// Score is higher when utilization is lower
-	score := (1.0 - cpuUtilization*0.5) + (1.0 - memoryUtilization*0.5)
+	// Cost-Aware Scoring Formula:
+	// Score = (ResourceAvailability * 0.7) + ((1 - EnergyCost) * 0.2) + (Renewable ? 0.1 : 0.0)
 
-	// If cost info is available, factor it in (lower cost = higher score)
+	// 1. Resource Availability (0-1) - Lower utilization means higher availability
+	resourceAvailability := ((1.0 - cpuUtilization) * 0.5) + ((1.0 - memoryUtilization) * 0.5)
+
+	// 2. Cost and Renewable factors
+	energyCost := 0.0
+	renewableBonus := 0.0
 	if cluster.Spec.Cost != nil {
-		// For now, we just ensure cost doesn't make score negative
-		// In production, you'd normalize cost and subtract it
-		score = score * 0.9 // Slight penalty if cost exists but not optimized
+		energyCost = cluster.Spec.Cost.EnergyCost
+		if cluster.Spec.Cost.Renewable {
+			renewableBonus = 0.1
+		}
 	}
+
+	// Final weighted score = 70% resource availability + 20% energy cost + 10% renewable bonus
+	score := (resourceAvailability * 0.7) + ((1.0 - energyCost) * 0.2) + renewableBonus
 
 	priorityBonus := float64(priority) * 0.01
 
@@ -143,9 +151,21 @@ func (d *DecisionEngine) calculateBaseScore(cluster *brokerv1alpha1.ClusterAdver
 		return 0
 	}
 
-	// Score based on available percentage (0-100)
-	cpuAvailablePercent := (availableCPU / allocatableCPU) * 50
-	memoryAvailablePercent := (availableMemory / allocatableMemory) * 50
+	// Score based on available percentage (0-1)
+	cpuAvailableRatio := availableCPU / allocatableCPU
+	memoryAvailableRatio := availableMemory / allocatableMemory
+	resourceAvailability := (cpuAvailableRatio * 0.5) + (memoryAvailableRatio * 0.5)
 
-	return cpuAvailablePercent + memoryAvailablePercent
+	// Cost and Renewable factors
+	energyCost := 0.0
+	renewableBonus := 0.0
+	if cluster.Spec.Cost != nil {
+		energyCost = cluster.Spec.Cost.EnergyCost
+		if cluster.Spec.Cost.Renewable {
+			renewableBonus = 0.1
+		}
+	}
+
+	// Final weighted score (0-1 range)
+	return (resourceAvailability * 0.7) + ((1.0 - energyCost) * 0.2) + renewableBonus
 }
