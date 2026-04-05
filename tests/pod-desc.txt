@@ -1,0 +1,91 @@
+Name:             resource-agent-8477b6f5d6-w7gkk
+Namespace:        default
+Priority:         0
+Service Account:  resource-agent
+Node:             agent-cluster-1-control-plane/172.18.0.3
+Start Time:       Sat, 04 Apr 2026 17:26:16 +0200
+Labels:           app=resource-agent
+                  pod-template-hash=8477b6f5d6
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.12
+IPs:
+  IP:           10.244.0.12
+Controlled By:  ReplicaSet/resource-agent-8477b6f5d6
+Containers:
+  agent:
+    Container ID:  containerd://a4dc688407abdd829b98ea93bd1caf1811e2687756fa33db9beca0718923b6bd
+    Image:         resource-agent:latest
+    Image ID:      sha256:8fc2907ecc6272a124ed980173d25f3954e2a9019c88470d40ecc23e5f947cc3
+    Port:          8082/TCP
+    Host Port:     0/TCP
+    Args:
+      --broker-transport=http
+      --broker-url=https://broker-service:8444
+      --broker-cert-path=/etc/agent/certs
+      --cluster-id=$(CLUSTER_ID)
+      --advertisement-name=cluster-advertisement
+      --advertisement-namespace=default
+      --health-probe-bind-address=:8082
+      --metrics-bind-address=0
+      --advertisement-requeue-interval=10s
+      --kubeconfigs-dir=/etc/agent/kubeconfigs
+      --renewable=$(RENEWABLE)
+      --energy-cost=$(ENERGY_COST)
+    State:          Waiting
+      Reason:       CrashLoopBackOff
+    Last State:     Terminated
+      Reason:       StartError
+      Message:      failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: error mounting "/var/lib/kubelet/pods/f6ddca1d-4e2e-40b9-9fdf-5436213fa84d/volume-subpaths/ca/agent/1" to rootfs at "/etc/agent/certs/ca.crt": mount src=/var/lib/kubelet/pods/f6ddca1d-4e2e-40b9-9fdf-5436213fa84d/volume-subpaths/ca/agent/1, dst=/etc/agent/certs/ca.crt, dstFd=/proc/thread-self/fd/11, flags=MS_RDONLY|MS_BIND|MS_REC: not a directory
+      Exit Code:    128
+      Started:      Thu, 01 Jan 1970 01:00:00 +0100
+      Finished:     Sat, 04 Apr 2026 17:47:49 +0200
+    Ready:          False
+    Restart Count:  9
+    Environment:
+      CLUSTER_ID:   agent-cluster-1
+      RENEWABLE:    true
+      ENERGY_COST:  0.5
+    Mounts:
+      /etc/agent/certs from certs (ro)
+      /etc/agent/certs/ca.crt from ca (ro,path="ca.crt")
+      /etc/agent/kubeconfigs from kubeconfigs (ro)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-k2tzl (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  certs:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  agent-tls
+    Optional:    false
+  ca:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  ca-secret
+    Optional:    false
+  kubeconfigs:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  agent-kubeconfigs
+    Optional:    false
+  kube-api-access-k2tzl:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                   From               Message
+  ----     ------     ----                  ----               -------
+  Normal   Scheduled  23m                   default-scheduler  Successfully assigned default/resource-agent-8477b6f5d6-w7gkk to agent-cluster-1-control-plane
+  Warning  BackOff    7m28s (x19 over 23m)  kubelet            Back-off restarting failed container agent in pod resource-agent-8477b6f5d6-w7gkk_default(f6ddca1d-4e2e-40b9-9fdf-5436213fa84d)
+  Normal   Pulled     2m11s (x10 over 23m)  kubelet            Container image "resource-agent:latest" already present on machine and can be accessed by the pod
+  Normal   Created    2m10s (x10 over 23m)  kubelet            Container created
+  Warning  Failed     2m10s (x10 over 23m)  kubelet            Error: failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: error mounting "/var/lib/kubelet/pods/f6ddca1d-4e2e-40b9-9fdf-5436213fa84d/volume-subpaths/ca/agent/1" to rootfs at "/etc/agent/certs/ca.crt": mount src=/var/lib/kubelet/pods/f6ddca1d-4e2e-40b9-9fdf-5436213fa84d/volume-subpaths/ca/agent/1, dst=/etc/agent/certs/ca.crt, dstFd=/proc/thread-self/fd/11, flags=MS_RDONLY|MS_BIND|MS_REC: not a directory

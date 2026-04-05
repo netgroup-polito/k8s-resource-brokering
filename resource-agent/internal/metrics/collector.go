@@ -149,6 +149,12 @@ func (c *Collector) calculateAllocatedResources(ctx context.Context) (*rearv1alp
 	hasGPU := false
 
 	for _, pod := range podList.Items {
+		// =====================================================================
+		// DESIGN DECISION: Pre-Booking Mechanism
+		//
+		// We purposefully consider pods in "Pending" state when summing up the
+		// allocated resources.
+		// =====================================================================
 		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
 			continue
 		}

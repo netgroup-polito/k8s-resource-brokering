@@ -1,0 +1,70 @@
+Name:             resource-broker-745c9985b7-zx4jb
+Namespace:        default
+Priority:         0
+Service Account:  resource-broker
+Node:             broker-cluster-control-plane/172.18.0.2
+Start Time:       Sat, 04 Apr 2026 17:26:15 +0200
+Labels:           app=resource-broker
+                  pod-template-hash=745c9985b7
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.8
+IPs:
+  IP:           10.244.0.8
+Controlled By:  ReplicaSet/resource-broker-745c9985b7
+Containers:
+  broker:
+    Container ID:  containerd://f694c9cd7f5bcf246b3b609243fb298268e220d1d735cd3fc16a4d836424eb59
+    Image:         resource-broker:latest
+    Image ID:      sha256:d3affaf8cd72a7fa5e6fa1114311119f51f1813654ad748e57eedd9050848ed7
+    Ports:         8444/TCP, 8081/TCP
+    Host Ports:    0/TCP, 0/TCP
+    Args:
+      --metrics-bind-address=0
+      --health-probe-bind-address=:8081
+      --leader-elect=false
+      --cert-path=/etc/broker/certs
+      --port=8444
+    State:          Waiting
+      Reason:       CrashLoopBackOff
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    2
+      Started:      Sat, 04 Apr 2026 18:14:00 +0200
+      Finished:     Sat, 04 Apr 2026 18:14:00 +0200
+    Ready:          False
+    Restart Count:  14
+    Environment:    <none>
+    Mounts:
+      /etc/broker/certs from certs (ro)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-gcpmz (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  certs:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  broker-server-tls
+    Optional:    false
+  kube-api-access-gcpmz:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                   From               Message
+  ----     ------     ----                  ----               -------
+  Normal   Scheduled  50m                   default-scheduler  Successfully assigned default/resource-broker-745c9985b7-zx4jb to broker-cluster-control-plane
+  Normal   Started    34m (x9 over 50m)     kubelet            Container started
+  Normal   Created    28m (x10 over 50m)    kubelet            Container created
+  Normal   Pulled     2m57s (x15 over 50m)  kubelet            Container image "resource-broker:latest" already present on machine and can be accessed by the pod
+  Warning  BackOff    2m55s (x43 over 50m)  kubelet            Back-off restarting failed container broker in pod resource-broker-745c9985b7-zx4jb_default(d0d7ea6a-ecd4-4f45-980a-7ec44a22d9ca)

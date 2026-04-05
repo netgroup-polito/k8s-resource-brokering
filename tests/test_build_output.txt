@@ -1,0 +1,3 @@
+# github.com/netgroup-polito/k8s-resource-brokering/tests [github.com/netgroup-polito/k8s-resource-brokering/tests.test]
+.\reservation_test.go:83:21: cannot use resource.MustParse("500m") (value of struct type resource.Quantity) as string value in struct literal
+.\reservation_test.go:84:21: cannot use resource.MustParse("256Mi") (value of struct type resource.Quantity) as string value in struct literal

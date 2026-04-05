@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: resource-agent
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: resource-agent-role
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: resource-agent-binding
+subjects:
+- kind: ServiceAccount
+  name: resource-agent
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: resource-agent-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-agent
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resource-agent
+  template:
+    metadata:
+      labels:
+        app: resource-agent
+    spec:
+      serviceAccountName: resource-agent
+      containers:
+      - name: agent
+        image: resource-agent:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --broker-transport=http
+        - --broker-url=https://broker-cluster-control-plane:30444
+        - --broker-cert-path=/etc/agent/certs
+        - --cluster-id=$(CLUSTER_ID)
+        - --advertisement-name=cluster-advertisement
+        - --advertisement-namespace=default
+        - --health-probe-bind-address=:8082
+        - --metrics-bind-address=0
+        - --advertisement-requeue-interval=10s
+        - --kubeconfigs-dir=/etc/agent/kubeconfigs
+        - --renewable=$(RENEWABLE)
+        - --energy-cost=$(ENERGY_COST)
+        env:
+        - name: CLUSTER_ID
+          value: "agent-cluster-1" # To be overridden or templated
+        - name: RENEWABLE
+          value: "true"
+        - name: ENERGY_COST
+          value: "0.5"
+        ports:
+        - containerPort: 8082
+        volumeMounts:
+        - name: certs
+          mountPath: /etc/agent/certs/tls.crt
+          subPath: tls.crt
+          readOnly: true
+        - name: certs
+          mountPath: /etc/agent/certs/tls.key
+          subPath: tls.key
+          readOnly: true
+        - name: ca
+          mountPath: /etc/agent/certs/ca.crt
+          subPath: ca.crt
+          readOnly: true
+        - name: kubeconfigs
+          mountPath: /etc/agent/kubeconfigs
+          readOnly: true
+      volumes:
+      - name: certs
+        secret:
+          secretName: agent-tls
+      - name: ca
+        secret:
+          secretName: ca-secret
+      - name: kubeconfigs
+        secret:
+          secretName: agent-kubeconfigs
