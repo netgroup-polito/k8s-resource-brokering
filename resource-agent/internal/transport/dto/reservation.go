@@ -25,10 +25,11 @@ type ReservationDTO struct {
 
 // ReservationStatusDTO represents the status of a reservation
 type ReservationStatusDTO struct {
-	Phase      string     `json:"phase"` // Pending, Reserved, Active, Released, Failed
-	Message    string     `json:"message"`
-	ReservedAt *time.Time `json:"reservedAt,omitempty"`
-	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
+	Phase             string     `json:"phase"` // Pending, Reserved, Active, Released, Failed
+	Message           string     `json:"message"`
+	ReservedAt        *time.Time `json:"reservedAt,omitempty"`
+	ExpiresAt         *time.Time `json:"expiresAt,omitempty"`
+	PeeringKubeconfig string     `json:"peeringKubeconfig,omitempty"`
 }
 
 // ReservationRequestDTO is sent by the agent to request a resource reservation.

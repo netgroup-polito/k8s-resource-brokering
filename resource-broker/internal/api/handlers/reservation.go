@@ -189,3 +189,105 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 		logger.Error(err, "Failed to encode response")
 	}
 }
+
+// PostPeeringKubeconfig handles POST /api/v1/reservations/{id}/kubeconfig
+// The provider agent uploads the peering kubeconfig for the requester cluster.
+func (h *Handler) PostPeeringKubeconfig(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx).WithName("reservation-handler")
+
+	reservationID := r.PathValue("id")
+	if reservationID == "" {
+		respondWithError(w, http.StatusBadRequest, "Missing reservation id parameter")
+		return
+	}
+
+	// Get provider ID from mTLS certificate
+	providerID, ok := middleware.GetClusterID(ctx)
+	if !ok || providerID == "" {
+		respondWithError(w, http.StatusForbidden, "Could not determine cluster ID from certificate")
+		return
+	}
+
+	var payload struct {
+		Kubeconfig string `json:"kubeconfig"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		logger.Error(err, "Failed to decode request body")
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if payload.Kubeconfig == "" {
+		respondWithError(w, http.StatusBadRequest, "Kubeconfig cannot be empty")
+		return
+	}
+
+	// Fetch the reservation
+	reservation := &brokerv1alpha1.Reservation{}
+	if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservationID, Namespace: h.namespace}, reservation); err != nil {
+		if apierrors.IsNotFound(err) {
+			respondWithError(w, http.StatusNotFound, "Reservation not found")
+		} else {
+			logger.Error(err, "Failed to fetch reservation")
+			respondWithError(w, http.StatusInternalServerError, "Internal server error")
+		}
+		return
+	}
+
+	// Verify that the calling cluster is indeed the target provider
+	if reservation.Spec.TargetClusterID != providerID {
+		logger.Error(nil, "Unauthorized kubeconfig upload",
+			"expectedProvider", reservation.Spec.TargetClusterID,
+			"actualProvider", providerID)
+		respondWithError(w, http.StatusForbidden, "Only the assigned provider can upload the peering kubeconfig")
+		return
+	}
+
+	// Update reservation status with the credential
+	reservation.Status.PeeringKubeconfig = payload.Kubeconfig
+	reservation.Status.LastUpdateTime = metav1.Now()
+
+	if err := h.k8sClient.Status().Update(ctx, reservation); err != nil {
+		logger.Error(err, "Failed to update reservation status with peering kubeconfig")
+		respondWithError(w, http.StatusInternalServerError, "Failed to save peering kubeconfig")
+		return
+	}
+
+	logger.Info("Successfully saved peering kubeconfig", "reservationID", reservationID, "providerID", providerID)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// GetReservation handles GET /api/v1/reservations/{id}
+func (h *Handler) GetReservation(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx).WithName("reservation-handler")
+
+	reservationID := r.PathValue("id")
+	if reservationID == "" {
+		respondWithError(w, http.StatusBadRequest, "Missing reservation id parameter")
+		return
+	}
+
+	// Fetch reservation
+	reservation := &brokerv1alpha1.Reservation{}
+	if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservationID, Namespace: h.namespace}, reservation); err != nil {
+		if apierrors.IsNotFound(err) {
+			respondWithError(w, http.StatusNotFound, "Reservation not found")
+		} else {
+			logger.Error(err, "Failed to fetch reservation")
+			respondWithError(w, http.StatusInternalServerError, "Internal server error")
+		}
+		return
+	}
+
+	// Convert to DTO
+	responseDTO := dto.FromReservation(reservation)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(responseDTO); err != nil {
+		logger.Error(err, "Failed to encode response")
+	}
+}

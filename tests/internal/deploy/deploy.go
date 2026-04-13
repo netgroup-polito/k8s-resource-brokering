@@ -112,7 +112,7 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		}
 
 		// 1. Create the kubeconfigs secret
-		if err := createKubeconfigsSecret(kubeconfigsDir); err != nil {
+		if err := createKubeconfigsSecret(kubeconfigsDir, agent.clusterName); err != nil {
 			return err
 		}
 
@@ -142,21 +142,17 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 	return nil
 }
 
-func createKubeconfigsSecret(kubeconfigsDir string) error {
-	fmt.Println("Creating kubeconfigs secret...")
-	
-	// Collect all .kubeconfig files in the directory
-	files, err := os.ReadDir(kubeconfigsDir)
-	if err != nil {
-		return err
-	}
+func createKubeconfigsSecret(kubeconfigsDir string, clusterName string) error {
+	fmt.Println("Creating kubeconfigs secret for", clusterName, "...")
 
 	args := []string{"create", "secret", "generic", "agent-kubeconfigs", "--namespace", "default", "--save-config", "--dry-run=client", "-o", "yaml"}
-	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".kubeconfig") {
-			args = append(args, "--from-file="+filepath.Join(kubeconfigsDir, f.Name()))
-		}
+	
+	kubeconfigFile := filepath.Join(kubeconfigsDir, clusterName+"-internal.kubeconfig")
+	if _, err := os.Stat(kubeconfigFile); os.IsNotExist(err) {
+		return fmt.Errorf("kubeconfig not found for %s: %s", clusterName, kubeconfigFile)
 	}
+
+	args = append(args, "--from-file="+clusterName+".kubeconfig="+kubeconfigFile)
 
 	// Apply the secret
 	cmd := exec.Command("kubectl", "apply", "-f", "-")

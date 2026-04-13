@@ -181,6 +181,10 @@ spec:
               message:
                 description: Message provides additional information about the status
                 type: string
+              peeringKubeconfig:
+                description: PeeringKubeconfig contains the restricted credentials
+                  for the requester
+                type: string
               phase:
                 description: |-
                   Phase represents the current state of the reservation

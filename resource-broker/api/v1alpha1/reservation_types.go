@@ -83,6 +83,10 @@ type ReservationStatus struct {
 	// +optional
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 
+	// PeeringKubeconfig contains the restricted credentials for the requester
+	// +optional
+	PeeringKubeconfig string `json:"peeringKubeconfig,omitempty"`
+
 	// LastUpdateTime
 	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`

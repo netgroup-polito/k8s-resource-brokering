@@ -342,18 +342,22 @@ func main() {
 	}
 
 	if err = (&controller.ProviderInstructionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		BrokerCommunicator: brokerCommunicator,
+		KubeconfigsDir:     kubeconfigsDir,
+		ClusterID:          clusterID,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ProviderInstruction")
 		os.Exit(1)
 	}
 
 	if err = (&controller.ReservationInstructionReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		KubeconfigsDir: kubeconfigsDir,
-		ClusterID:      clusterID,
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		BrokerCommunicator: brokerCommunicator,
+		KubeconfigsDir:     kubeconfigsDir,
+		ClusterID:          clusterID,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ReservationInstruction")
 		os.Exit(1)

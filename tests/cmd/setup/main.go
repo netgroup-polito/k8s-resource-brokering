@@ -56,6 +56,10 @@ func runSetup() error {
 		return err
 	}
 
+	if err := cluster.PatchCoreDNS(); err != nil {
+		return err
+	}
+
 	workdir, _ := os.Getwd()
 	// Adjust path based on execution location
 	kubeconfigsDir := filepath.Join(workdir, "test-setup", "kubeconfigs")

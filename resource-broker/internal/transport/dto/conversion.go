@@ -109,8 +109,9 @@ func FromReservation(rsv *brokerv1alpha1.Reservation) *ReservationDTO {
 			Memory: rsv.Spec.RequestedResources.Memory.String(),
 		},
 		Status: ReservationStatusDTO{
-			Phase:   string(rsv.Status.Phase),
-			Message: rsv.Status.Message,
+			Phase:             string(rsv.Status.Phase),
+			Message:           rsv.Status.Message,
+			PeeringKubeconfig: rsv.Status.PeeringKubeconfig,
 		},
 		CreatedAt: rsv.CreationTimestamp.Time,
 	}

@@ -24,6 +24,13 @@ type BrokerCommunicator interface {
 	// instead of waiting for the next advertisement cycle.
 	FetchInstructions(ctx context.Context) ([]*dto.ReservationDTO, error)
 
+	// GetReservation fetches a specific reservation by ID
+	GetReservation(ctx context.Context, reservationID string) (*dto.ReservationDTO, error)
+
+	// UploadPeeringKubeconfig securely sends the generated peering-user kubeconfig
+	// to the broker, so that the requester cluster can download and use it.
+	UploadPeeringKubeconfig(ctx context.Context, reservationID string, kubeconfig string) error
+
 	// Ping checks connectivity to broker
 	Ping(ctx context.Context) error
 

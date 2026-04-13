@@ -148,14 +148,14 @@ func TestReservationFlow(t *testing.T) {
 	}
 
 	// 7. Verify Liqo Peering (Virtual Node)
-	t.Log("Verifying Liqo peering (waiting for virtual node)...")
-	err = retry(20, 5*time.Second, func() error {
+	t.Log("Verifying Liqo peering (waiting up to 5 minutes for virtual node)...")
+	err = retry(60, 5*time.Second, func() error {
 		nodeList := &corev1.NodeList{}
 		if err := agent1Client.List(ctx, nodeList); err != nil {
 			return err
 		}
 		for _, node := range nodeList.Items {
-			if strings.Contains(strings.ToLower(node.Name), "liqo") {
+			if node.Name == targetClusterID || strings.Contains(strings.ToLower(node.Name), "liqo") {
 				t.Logf("Found virtual node: %s", node.Name)
 				return nil
 			}

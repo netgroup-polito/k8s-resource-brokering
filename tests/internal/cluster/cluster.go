@@ -105,16 +105,77 @@ func ExportKubeconfigs(destDir string) error {
 	//Agent1Cluster and Agent2Cluster are two constants defined at lines 12-13
 	clusters := []string{Agent1Cluster, Agent2Cluster}
 	for _, name := range clusters {
+		// 1. Export External Kubeconfig (for host tools like liqoctl install)
 		fmt.Printf("Exporting kubeconfig for %s...\n", name)
 		cmd := exec.Command("kind", "get", "kubeconfig", "--name", name)
 		output, err := cmd.Output()
 		if err != nil {
-			return fmt.Errorf("failed to get kubeconfig for %s: %w", name, err)
+			return fmt.Errorf("failed to get external kubeconfig for %s: %w", name, err)
 		}
-
 		filePath := fmt.Sprintf("%s/%s.kubeconfig", destDir, name)
 		if err := os.WriteFile(filePath, output, 0644); err != nil {
-			return fmt.Errorf("failed to write kubeconfig for %s: %w", name, err)
+			return fmt.Errorf("failed to write external kubeconfig for %s: %w", name, err)
+		}
+
+		// 2. Export Internal Kubeconfig (for pod-to-pod communication)
+		fmt.Printf("Exporting internal kubeconfig for %s...\n", name)
+		internalCmd := exec.Command("kind", "get", "kubeconfig", "--name", name, "--internal")
+		internalOutput, err := internalCmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to get internal kubeconfig for %s: %w", name, err)
+		}
+		
+		internalFilePath := fmt.Sprintf("%s/%s-internal.kubeconfig", destDir, name)
+		if err := os.WriteFile(internalFilePath, internalOutput, 0644); err != nil {
+			return fmt.Errorf("failed to write internal kubeconfig for %s: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+// PatchCoreDNS updates the CoreDNS configmap in all clusters to resolve other cluster's control-plane hostnames to their Docker IPs.
+func PatchCoreDNS() error {
+	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster}
+	hostsBlock := "        hosts {\n"
+	
+	for _, name := range clusters {
+		containerName := name + "-control-plane"
+		ipCmd := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", containerName)
+		ipOutput, err := ipCmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to get docker IP for %s: %w", containerName, err)
+		}
+		dockerIP := strings.TrimSpace(string(ipOutput))
+		hostsBlock += fmt.Sprintf("           %s %s\n", dockerIP, containerName)
+	}
+	hostsBlock += "           fallthrough\n        }\n"
+
+	for _, name := range clusters {
+		fmt.Printf("Patching CoreDNS in %s...\n", name)
+		
+		// Get current Corefile
+		getCmd := exec.Command("kubectl", "--context", "kind-"+name, "get", "configmap", "coredns", "-n", "kube-system", "-o", "jsonpath={.data.Corefile}")
+		corefileBytes, err := getCmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to get Corefile for %s: %w", name, err)
+		}
+		
+		corefile := string(corefileBytes)
+		if !strings.Contains(corefile, "hosts {") {
+			// Inject hosts block before the 'forward' directive or 'cache'
+			corefile = strings.Replace(corefile, "forward .", hostsBlock+"        forward .", 1)
+			
+			// Apply update
+			patchCtx := fmt.Sprintf(`{"data": {"Corefile": %q}}`, corefile)
+			patchCmd := exec.Command("kubectl", "--context", "kind-"+name, "patch", "configmap", "coredns", "-n", "kube-system", "--type", "merge", "-p", patchCtx)
+			if err := patchCmd.Run(); err != nil {
+				return fmt.Errorf("failed to patch CoreDNS for %s: %w", name, err)
+			}
+			
+			// Restart CoreDNS pods to apply changes
+			restartCmd := exec.Command("kubectl", "--context", "kind-"+name, "rollout", "restart", "deployment", "coredns", "-n", "kube-system")
+			restartCmd.Run()
 		}
 	}
 

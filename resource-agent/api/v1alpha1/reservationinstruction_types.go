@@ -25,6 +25,10 @@ type ReservationInstructionSpec struct {
 	// ExpiresAt mirrors the broker-side reservation expiry.
 	// +optional
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
+
+	// PeeringKubeconfig is the securely populated kubeconfig for peering
+	// +optional
+	PeeringKubeconfig string `json:"peeringKubeconfig,omitempty"`
 }
 
 // ReservationInstructionStatus tracks whether the instruction reached local automation.

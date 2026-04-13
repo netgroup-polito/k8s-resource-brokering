@@ -5,15 +5,6 @@ metadata:
   namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: resource-agent-role
-rules:
-- apiGroups: ["*"]
-  resources: ["*"]
-  verbs: ["*"]
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: resource-agent-binding
@@ -23,7 +14,7 @@ subjects:
   namespace: default
 roleRef:
   kind: ClusterRole
-  name: resource-agent-role
+  name: cluster-admin
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
