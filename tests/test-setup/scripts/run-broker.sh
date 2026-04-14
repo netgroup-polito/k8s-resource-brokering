@@ -7,8 +7,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$SCRIPT_DIR/../.."
-BROKER_DIR="$ROOT_DIR/liqo-resource-broker"
+ROOT_DIR="$SCRIPT_DIR/../../.."
+BROKER_DIR="$ROOT_DIR/resource-broker"
 CERT_DIR="$SCRIPT_DIR/../certs/broker"
 
 echo "=============================================="

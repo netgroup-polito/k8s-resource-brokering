@@ -7,8 +7,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$SCRIPT_DIR/../.."
-AGENT_DIR="$ROOT_DIR/liqo-resource-agent"
+ROOT_DIR="$SCRIPT_DIR/../../.."
+AGENT_DIR="$ROOT_DIR/resource-agent"
 CERT_DIR="$SCRIPT_DIR/../certs/agent1"
 KUBECONFIGS_DIR="$SCRIPT_DIR/../kubeconfigs"
 
