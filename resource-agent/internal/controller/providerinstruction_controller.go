@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -95,49 +96,61 @@ func (r *ProviderInstructionReconciler) Reconcile(ctx context.Context, req ctrl.
 	if r.BrokerCommunicator != nil {
 		// Clean up any existing CSR (certificate signing request) and RBAC artifacts for this peering user before attempting to generate a new one
 		localKubeconfig := filepath.Join(r.KubeconfigsDir, r.ClusterID+".kubeconfig")
+		var stdout bytes.Buffer
 
-		// This ensures idempotency if the pod crashed after creating roles but before uploading the kubeconfig
-		cleanupResources := [][]string{
-			{"csr", fmt.Sprintf("liqo-peer-user-%s", instruction.Spec.RequesterClusterID)},
-			{"rolebinding", fmt.Sprintf("liqo-peer-user-%s-liqo-ns-reader", instruction.Spec.RequesterClusterID), "-n", "liqo"},
-			{"clusterrolebinding", fmt.Sprintf("liqo-peer-user-%s-tenant-controlplane", instruction.Spec.RequesterClusterID)},
-			{"clusterrole", fmt.Sprintf("liqo-peer-user-%s-tenant-controlplane", instruction.Spec.RequesterClusterID)},
-		}
-
-		for _, res := range cleanupResources {
-			// Cleanup with a timeout context to avoid hanging if kubectl has issues
-			ctxObj, cancelObj := context.WithTimeout(ctx, 15*time.Second)
-			args := append([]string{"--kubeconfig", localKubeconfig, "delete"}, res...)
-			args = append(args, "--ignore-not-found=true") //idempotent cleanup
-			cleanupCmd := exec.CommandContext(ctxObj, "kubectl", args...)
-			if err := cleanupCmd.Run(); err != nil {
-				logger.Info("Cleanup returned an error (can be ignored)", "resource", res[0], "error", err)
+		if _, err := os.Stat(localKubeconfig); err == nil {
+			logger.Info("Peering kubeconfig already exists locally, skipping regeneration to avoid invalidating existing user", "requesterClusterID", instruction.Spec.RequesterClusterID)
+			
+			// Just read the existing one
+			content, err := os.ReadFile(localKubeconfig)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to read existing local kubeconfig: %v", err)
 			}
-			cancelObj()
-		}
+			stdout.WriteString(string(content))
+		} else {
+			// This ensures idempotency if the pod crashed after creating roles but before uploading the kubeconfig
+			cleanupResources := [][]string{
+				{"csr", fmt.Sprintf("liqo-peer-user-%s", instruction.Spec.RequesterClusterID)},
+				{"rolebinding", fmt.Sprintf("liqo-peer-user-%s-liqo-ns-reader", instruction.Spec.RequesterClusterID), "-n", "liqo"},
+				{"clusterrolebinding", fmt.Sprintf("liqo-peer-user-%s-tenant-controlplane", instruction.Spec.RequesterClusterID)},
+				{"clusterrole", fmt.Sprintf("liqo-peer-user-%s-tenant-controlplane", instruction.Spec.RequesterClusterID)},
+			}
 
-		//peeringCTX is a new context (inherited from the main ctx) with a timeout of 2 minutes, used to set the timeout for the peering user kubeconfig generation command. 
-		//cancelPeering is a function (context.CancelFunc) that will free resources associated with the peeringCtx when called.
-		peeringCtx, cancelPeering := context.WithTimeout(ctx, 2*time.Minute)
+			for _, res := range cleanupResources {
+				// Cleanup with a timeout context to avoid hanging if kubectl has issues
+				ctxObj, cancelObj := context.WithTimeout(ctx, 15*time.Second)
+				args := append([]string{"--kubeconfig", localKubeconfig, "delete"}, res...)
+				args = append(args, "--ignore-not-found=true") //idempotent cleanup
+				cleanupCmd := exec.CommandContext(ctxObj, "kubectl", args...)
+				if err := cleanupCmd.Run(); err != nil {
+					logger.Info("Cleanup returned an error (can be ignored)", "resource", res[0], "error", err)
+				}
+				cancelObj()
+			}
 
-		//GO: defer indica che la funzione cancelPeering() verrà eseguita alla fine del blocco corrente (la funzione Reconcile),
-		// indipendentemente da come si esce da esso (sia in caso di successo che di errore). 
-		// In questo caso, garantisce che le risorse associate al contesto peeringCtx vengano rilasciate correttamente dopo l'esecuzione del comando per generare il kubeconfig.
-		defer cancelPeering()
-		
-		//Execution of the command to generate the peering-user kubeconfig. 
-		peeringUserCmd := exec.CommandContext(peeringCtx, "liqoctl", "generate", "peering-user",
-			"--kubeconfig", localKubeconfig,
-			"--consumer-cluster-id", instruction.Spec.RequesterClusterID)
+			//peeringCTX is a new context (inherited from the main ctx) with a timeout of 2 minutes, used to set the timeout for the peering user kubeconfig generation command. 
+			//cancelPeering is a function (context.CancelFunc) that will free resources associated with the peeringCtx when called.
+			peeringCtx, cancelPeering := context.WithTimeout(ctx, 2*time.Minute)
 
-		var stdout, stderr bytes.Buffer
-		peeringUserCmd.Stdout = &stdout
-		peeringUserCmd.Stderr = &stderr
+			//GO: defer indica che la funzione cancelPeering() verrà eseguita alla fine del blocco corrente (la funzione Reconcile),
+			// indipendentemente da come si esce da esso (sia in caso di successo che di errore). 
+			// In questo caso, garantisce che le risorse associate al contesto peeringCtx vengano rilasciate correttamente dopo l'esecuzione del comando per generare il kubeconfig.
+			defer cancelPeering()
+			
+			//Execution of the command to generate the peering-user kubeconfig. 
+			peeringUserCmd := exec.CommandContext(peeringCtx, "liqoctl", "generate", "peering-user",
+				"--kubeconfig", localKubeconfig,
+				"--consumer-cluster-id", instruction.Spec.RequesterClusterID)
 
-		logger.Info("Generating peering-user kubeconfig", "requesterClusterID", instruction.Spec.RequesterClusterID)
-		if err := peeringUserCmd.Run(); err != nil {
-			logger.Error(err, "Failed to generate peering-user kubeconfig", "stderr", stderr.String())
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			var stderr bytes.Buffer
+			peeringUserCmd.Stdout = &stdout
+			peeringUserCmd.Stderr = &stderr
+
+			logger.Info("Generating peering-user kubeconfig", "requesterClusterID", instruction.Spec.RequesterClusterID)
+			if err := peeringUserCmd.Run(); err != nil {
+				logger.Error(err, "Failed to generate peering-user kubeconfig", "stderr", stderr.String())
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
 		}
 		kubeconfigContent := strings.TrimSpace(stdout.String())
 
