@@ -39,3 +39,8 @@ type ReservationRequestDTO struct {
 	Priority           int32                 `json:"priority,omitempty"`
 	Duration           string                `json:"duration,omitempty"` // e.g., "1h", "30m"
 }
+
+// EvaluationResponseDTO is returned when evaluating a request without reserving
+type EvaluationResponseDTO struct {
+	TargetClusterID string `json:"targetClusterID"`
+}

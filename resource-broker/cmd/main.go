@@ -191,6 +191,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	//setting up the ClusterAdvertisement controller (it handles the ClusterAdvertisements)
 	if err := (&controller.ClusterAdvertisementReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -204,6 +205,7 @@ func main() {
 		Client: mgr.GetClient(),
 	}
 
+	//setting up the Reservation controller (it handles the Reservations)
 	if err := (&controller.ReservationReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
@@ -233,6 +235,8 @@ func main() {
 	// =============================================================================
 
 	switch brokerInterface {
+
+	//if the http interface is chosed ù, in a separate goroutine is started a web server
 	case "http":
 		// HTTP REST API with mTLS - agents use --broker-transport=http
 		setupLog.Info("Starting broker with HTTP interface",
@@ -283,6 +287,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	//The manager officially starts here
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")

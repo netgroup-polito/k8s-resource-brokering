@@ -17,6 +17,13 @@ import (
 type Collector struct {
 	Client            client.Client
 	ClusterIDOverride string
+
+	// Provider sharing logic
+	SharingLogic       string
+	SharingPercentage  int
+	SharingFixedCPU    string
+	SharingFixedMemory string
+	SharingFixedGPU    string
 }
 
 // CollectClusterResources collects detailed resource information from all nodes
@@ -122,6 +129,69 @@ func (c *Collector) CollectClusterResources(ctx context.Context) (*rearv1alpha1.
 			availableGPU = *resource.NewQuantity(0, resource.DecimalSI)
 		}
 		available.GPU = &availableGPU
+	}
+
+	// Apply sharing logic
+	switch c.SharingLogic {
+	case "percentage":
+		if c.SharingPercentage >= 0 && c.SharingPercentage < 100 {
+			ratio := float64(c.SharingPercentage) / 100.0
+			
+
+			
+			// We can't use float directly, we use MilliValue for CPU to keep precision
+			cpuMilli := int64(float64(available.CPU.MilliValue()) * ratio)
+			available.CPU = *resource.NewMilliQuantity(cpuMilli, resource.DecimalSI)
+			
+			memVal := int64(float64(available.Memory.Value()) * ratio)
+			available.Memory = *resource.NewQuantity(memVal, resource.BinarySI)
+
+			if available.GPU != nil {
+				gpuVal := int64(float64(available.GPU.Value()) * ratio)
+				available.GPU = resource.NewQuantity(gpuVal, resource.DecimalSI)
+			}
+		}
+	case "fixed":
+		if c.SharingFixedCPU != "" {
+			fixedCPU, err := resource.ParseQuantity(c.SharingFixedCPU)
+			if err == nil {
+				// Provide the fixed amount, but do not exceed physical available
+				if fixedCPU.Cmp(available.CPU) < 0 {
+					available.CPU = fixedCPU
+				}
+			}
+		} else {
+			available.CPU = zero
+		}
+		
+		if c.SharingFixedMemory != "" {
+			fixedMem, err := resource.ParseQuantity(c.SharingFixedMemory)
+			if err == nil {
+				// Provide the fixed amount, but do not exceed physical available
+				if fixedMem.Cmp(available.Memory) < 0 {
+					available.Memory = fixedMem
+				}
+			}
+		} else {
+			available.Memory = zero
+		}
+		
+		if hasGPU {
+			if c.SharingFixedGPU != "" {
+				fixedGPU, err := resource.ParseQuantity(c.SharingFixedGPU)
+				if err == nil && available.GPU != nil {
+					if fixedGPU.Cmp(*available.GPU) < 0 {
+						available.GPU = &fixedGPU
+					}
+				}
+			} else {
+				available.GPU = &zero
+			}
+		}
+	case "all":
+		fallthrough
+	default:
+		// do nothing, expose all available
 	}
 
 	return &rearv1alpha1.ResourceMetrics{

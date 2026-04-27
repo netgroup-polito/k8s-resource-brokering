@@ -190,6 +190,40 @@ func (c *HTTPCommunicator) RequestReservation(ctx context.Context, reqDTO *dto.R
 	return &reservation, nil
 }
 
+// EvaluateProviders queries the broker to find the best provider for the
+// requested resources without making a reservation.
+func (c *HTTPCommunicator) EvaluateProviders(ctx context.Context, reqDTO *dto.ReservationRequestDTO) (*dto.EvaluationResponseDTO, error) {
+	body, err := json.Marshal(reqDTO)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal evaluation request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/evaluations", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doWithRetry(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send evaluation request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("broker returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var evaluation dto.EvaluationResponseDTO
+	if err := json.NewDecoder(resp.Body).Decode(&evaluation); err != nil {
+		return nil, fmt.Errorf("failed to decode evaluation response: %w", err)
+	}
+
+	return &evaluation, nil
+}
+
 // FetchInstructions polls the broker for pending provider instructions.
 // This is a lightweight GET request that returns near-instantly.
 func (c *HTTPCommunicator) FetchInstructions(ctx context.Context) ([]*dto.ReservationDTO, error) {

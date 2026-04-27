@@ -50,6 +50,9 @@ spec:
         - --kubeconfigs-dir=/etc/agent/kubeconfigs
         - --renewable=$(RENEWABLE)
         - --energy-cost=$(ENERGY_COST)
+        - --agent-role=$(AGENT_ROLE)
+        - --sharing-logic=$(SHARING_LOGIC)
+        - --sharing-percentage=$(SHARING_PERCENTAGE)
         env:
         - name: CLUSTER_ID
           value: "agent-cluster-1" # To be overridden or templated
@@ -57,6 +60,12 @@ spec:
           value: "true"
         - name: ENERGY_COST
           value: "0.5"
+        - name: AGENT_ROLE
+          value: "provider"
+        - name: SHARING_LOGIC
+          value: "all"
+        - name: SHARING_PERCENTAGE
+          value: "100"
         ports:
         - containerPort: 8082
         volumeMounts:

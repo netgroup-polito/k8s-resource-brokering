@@ -18,31 +18,28 @@ type ReservationInstructionSpec struct {
 	// RequestedMemory is the memory quantity to consume.
 	RequestedMemory string `json:"requestedMemory"`
 
+	// RequestedGPU is the GPU quantity to consume.
+	RequestedGPU string `json:"requestedGPU,omitempty"`
+
 	// Message provides human-readable hints for operators.
-	// +optional
 	Message string `json:"message,omitempty"`
 
 	// ExpiresAt mirrors the broker-side reservation expiry.
-	// +optional
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 
 	// PeeringKubeconfig is the securely populated kubeconfig for peering
-	// +optional
 	PeeringKubeconfig string `json:"peeringKubeconfig,omitempty"`
 }
 
 // ReservationInstructionStatus tracks whether the instruction reached local automation.
 type ReservationInstructionStatus struct {
 	// ObservedReservationResourceVersion is used to avoid double processing.
-	// +optional
 	ObservedReservationResourceVersion string `json:"observedReservationResourceVersion,omitempty"`
 
 	// Delivered marks that local automation has acknowledged the instruction.
-	// +optional
 	Delivered bool `json:"delivered,omitempty"`
 
 	// LastUpdateTime records the last update timestamp.
-	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 }
 

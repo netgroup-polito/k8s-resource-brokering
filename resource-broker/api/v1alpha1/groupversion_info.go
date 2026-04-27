@@ -25,7 +25,22 @@ import (
 )
 
 var (
-	// GroupVersion is group version used to register these objects.
+
+	/*Note: in kubernetes, all the resources are identified univocally by a Group, Version and Kind.
+	In our case, they are:
+	- Group: broker.fluidos.eu
+	- Version: v1alpha1
+	- Kind: ClusterAdvertisement
+
+	The API machinery uses this information to identify and manage resources.
+	- Group and version -> define the API group and version
+	- Kind -> defines the type of resource
+	- Plural name -> defines the plural name of the resource (used for kubectl commands)
+		In our case: "clusteradvertisements"
+	*/
+
+	// GroupVersion indicates univocally the API group and version of our API group.
+	// It is used to register our types with the scheme so that they can be used by the controller-runtime and the API machinery.
 	GroupVersion = schema.GroupVersion{Group: "broker.fluidos.eu", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.

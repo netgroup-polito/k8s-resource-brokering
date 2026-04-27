@@ -88,6 +88,12 @@ func main() {
 	var kubeconfigsDir string
 	var renewable bool
 	var energyCost float64
+	var agentRole string // "requester" or "provider"
+	var sharingLogic string
+	var sharingPercentage int
+	var sharingFixedCPU string
+	var sharingFixedMemory string
+	var sharingFixedGPU string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -120,6 +126,12 @@ func main() {
 	flag.StringVar(&kubeconfigsDir, "kubeconfigs-dir", "", "Directory containing kubeconfig files for Liqo peering (enables automatic peering)")
 	flag.BoolVar(&renewable, "renewable", false, "Indicates if the cluster uses renewable energy")
 	flag.Float64Var(&energyCost, "energy-cost", 0.0, "The cost of energy (0-1 normalization recommended)")
+	flag.StringVar(&agentRole, "agent-role", "provider", "Agent role: 'requester' or 'provider'")
+	flag.StringVar(&sharingLogic, "sharing-logic", "all", "Provider resource sharing logic: 'all', 'percentage', or 'fixed'")
+	flag.IntVar(&sharingPercentage, "sharing-percentage", 100, "Percentage of free resources to share (if sharing-logic=percentage)")
+	flag.StringVar(&sharingFixedCPU, "sharing-fixed-cpu", "", "Fixed amount of CPU to share (if sharing-logic=fixed)")
+	flag.StringVar(&sharingFixedMemory, "sharing-fixed-memory", "", "Fixed amount of Memory to share (if sharing-logic=fixed)")
+	flag.StringVar(&sharingFixedGPU, "sharing-fixed-gpu", "", "Fixed amount of GPU to share (if sharing-logic=fixed)")
 
 	opts := zap.Options{
 		Development: true,
@@ -320,84 +332,99 @@ func main() {
 		setupLog.Info("Broker transport not specified, broker communication disabled")
 	}
 
-	if err = (&controller.AdvertisementReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		MetricsCollector: &metrics.Collector{
-			ClusterIDOverride: clusterID,
-		},
-		BrokerClient:         brokerClient,         // Legacy Kubernetes transport
-		BrokerCommunicator:   brokerCommunicator,   // New transport abstraction (HTTP)
-		RequeueInterval:      advertisementRequeueInterval,
-		InstructionNamespace: instructionNamespace,  // For provider instructions from response
-		TargetKey: types.NamespacedName{
-			Name:      advertisementName,
-			Namespace: advertisementNamespace,
-		},
-		Renewable:  renewable,
-		EnergyCost: energyCost,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Advertisement")
+	if agentRole != "requester" && agentRole != "provider" {
+		setupLog.Error(nil, "Invalid agent-role", "role", agentRole)
 		os.Exit(1)
 	}
+	setupLog.Info("Agent role configured", "role", agentRole)
 
-	if err = (&controller.ProviderInstructionReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		BrokerCommunicator: brokerCommunicator,
-		KubeconfigsDir:     kubeconfigsDir,
-		ClusterID:          clusterID,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProviderInstruction")
-		os.Exit(1)
-	}
-
-	if err = (&controller.ReservationInstructionReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		BrokerCommunicator: brokerCommunicator,
-		KubeconfigsDir:     kubeconfigsDir,
-		ClusterID:          clusterID,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ReservationInstruction")
-		os.Exit(1)
-	}
-
-	// ResourceRequest controller: handles synchronous reservation requests to the broker
-	if err = (&controller.ResourceRequestReconciler{
-		Client:               mgr.GetClient(),
-		Scheme:               mgr.GetScheme(),
-		BrokerCommunicator:   brokerCommunicator,
-		InstructionNamespace: instructionNamespace,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ResourceRequest")
-		os.Exit(1)
-	}
-
-	// Start instruction poller for near-instant provider instruction delivery (HTTP transport)
-	if brokerCommunicator != nil && instructionPollInterval > 0 {
-		poller := &controller.InstructionPoller{
-			Client:               mgr.GetClient(),
-			BrokerCommunicator:   brokerCommunicator,
-			PollInterval:         instructionPollInterval,
-			InstructionNamespace: instructionNamespace,
+	if agentRole == "provider" {
+		if err = (&controller.AdvertisementReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			MetricsCollector: &metrics.Collector{
+				ClusterIDOverride:  clusterID,
+				SharingLogic:       sharingLogic,
+				SharingPercentage:  sharingPercentage,
+				SharingFixedCPU:    sharingFixedCPU,
+				SharingFixedMemory: sharingFixedMemory,
+				SharingFixedGPU:    sharingFixedGPU,
+			},
+			BrokerClient:         brokerClient,         // Legacy Kubernetes transport
+			BrokerCommunicator:   brokerCommunicator,   // New transport abstraction (HTTP)
+			RequeueInterval:      advertisementRequeueInterval,
+			InstructionNamespace: instructionNamespace,  // For provider instructions from response
+			TargetKey: types.NamespacedName{
+				Name:      advertisementName,
+				Namespace: advertisementNamespace,
+			},
+			Renewable:  renewable,
+			EnergyCost: energyCost,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Advertisement")
+			os.Exit(1)
 		}
-		go func() {
-			if err := poller.Start(context.Background()); err != nil {
-				setupLog.Error(err, "Instruction poller failed")
+
+		if err = (&controller.ProviderInstructionReconciler{
+			Client:             mgr.GetClient(),
+			Scheme:             mgr.GetScheme(),
+			BrokerCommunicator: brokerCommunicator,
+			KubeconfigsDir:     kubeconfigsDir,
+			ClusterID:          clusterID,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ProviderInstruction")
+			os.Exit(1)
+		}
+
+		// Start instruction poller for near-instant provider instruction delivery (HTTP transport)
+		if brokerCommunicator != nil && instructionPollInterval > 0 {
+			poller := &controller.InstructionPoller{
+				Client:               mgr.GetClient(),
+				BrokerCommunicator:   brokerCommunicator,
+				PollInterval:         instructionPollInterval,
+				InstructionNamespace: instructionNamespace,
 			}
-		}()
-		setupLog.Info("Instruction poller started", "interval", instructionPollInterval)
+			go func() {
+				if err := poller.Start(context.Background()); err != nil {
+					setupLog.Error(err, "Instruction poller failed")
+				}
+			}()
+			setupLog.Info("Instruction poller started", "interval", instructionPollInterval)
+		}
 	}
 
-	// Start Reservation Watcher if broker client is available (Kubernetes transport)
-	if brokerClient != nil && brokerClient.Enabled {
-		watcher := publisher.NewReservationWatcher(brokerClient, mgr.GetClient(), instructionNamespace)
-		go func() {
-			if err := watcher.Start(context.Background()); err != nil {
-				setupLog.Error(err, "Reservation watcher failed")
-			}
-		}()
+	if agentRole == "requester" {
+		if err = (&controller.ReservationInstructionReconciler{
+			Client:             mgr.GetClient(),
+			Scheme:             mgr.GetScheme(),
+			BrokerCommunicator: brokerCommunicator,
+			KubeconfigsDir:     kubeconfigsDir,
+			ClusterID:          clusterID,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ReservationInstruction")
+			os.Exit(1)
+		}
+
+		// ResourceRequest controller: handles synchronous reservation requests to the broker
+		if err = (&controller.ResourceRequestReconciler{
+			Client:               mgr.GetClient(),
+			Scheme:               mgr.GetScheme(),
+			BrokerCommunicator:   brokerCommunicator,
+			InstructionNamespace: instructionNamespace,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ResourceRequest")
+			os.Exit(1)
+		}
+
+		// Start Reservation Watcher if broker client is available (Kubernetes transport)
+		if brokerClient != nil && brokerClient.Enabled {
+			watcher := publisher.NewReservationWatcher(brokerClient, mgr.GetClient(), instructionNamespace)
+			go func() {
+				if err := watcher.Start(context.Background()); err != nil {
+					setupLog.Error(err, "Reservation watcher failed")
+				}
+			}()
+		}
 	}
 	// +kubebuilder:scaffold:builder
 

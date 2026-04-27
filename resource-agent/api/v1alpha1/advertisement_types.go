@@ -29,8 +29,7 @@ type AdvertisementSpec struct {
 	// Resources available in this cluster
 	Resources ResourceMetrics `json:"resources"`
 
-	// Cost information (optional)
-	// +optional
+	// Cost information
 	Cost *CostInfo `json:"cost,omitempty"`
 
 	// Timestamp when this advertisement was created
@@ -49,7 +48,6 @@ type ResourceMetrics struct {
 	Allocated ResourceQuantities `json:"allocated"`
 
 	// Used - Resources actually being consumed right now
-	// +optional
 	Used *ResourceQuantities `json:"used,omitempty"`
 
 	// Available - Allocatable minus Allocated (what's still schedulable)
@@ -64,12 +62,10 @@ type ResourceQuantities struct {
 	// Memory in bytes
 	Memory resource.Quantity `json:"memory"`
 
-	// GPU (optional)
-	// +optional
+	// GPU
 	GPU *resource.Quantity `json:"gpu,omitempty"`
 
-	// Storage (optional)
-	// +optional
+	// Storage
 	Storage *resource.Quantity `json:"storage,omitempty"`
 }
 
@@ -85,26 +81,21 @@ type CostInfo struct {
 	Currency string `json:"currency,omitempty"`
 
 	// Renewable indicates if the cluster uses renewable energy
-	// +optional
 	Renewable bool `json:"renewable,omitempty"`
 
 	// EnergyCost is the cost of energy (0-1 normalization recommended)
-	// +optional
 	EnergyCost float64 `json:"energyCost,omitempty"`
 }
 
 // AdvertisementStatus defines the observed state of Advertisement
 type AdvertisementStatus struct {
 	// Phase represents the current state of the advertisement
-	// +optional
 	Phase string `json:"phase,omitempty"`
 
 	// LastUpdateTime is when this advertisement was last updated
-	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	// Published indicates if this advertisement has been published to the broker
-	// +optional
 	Published bool `json:"published,omitempty"`
 
 	// Message provides additional information about the status

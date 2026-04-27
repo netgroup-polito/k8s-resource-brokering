@@ -17,7 +17,10 @@ import (
 
 	rearv1alpha1 "github.com/mehdiazizian/liqo-resource-agent/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+const peeringFinalizer = "rear.fluidos.eu/peering"
 
 // ReservationInstructionReconciler processes reservation instructions from the broker.
 type ReservationInstructionReconciler struct {
@@ -48,6 +51,39 @@ func (r *ReservationInstructionReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	// Handle deletion
+	if !instruction.ObjectMeta.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(instruction, peeringFinalizer) {
+			logger.Info("Reservation instruction is being deleted, executing teardown",
+				"targetCluster", instruction.Spec.TargetClusterID)
+			
+			// Execute liqoctl unpeer
+			if instruction.Status.Delivered {
+				if err := r.executeLiqoUnpeer(ctx, instruction.Spec.TargetClusterID, instruction.Spec.PeeringKubeconfig); err != nil {
+					logger.Error(err, "Failed to execute liqoctl unpeer during teardown", "targetCluster", instruction.Spec.TargetClusterID)
+					// Requeue to retry teardown
+					return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+				}
+			}
+
+			controllerutil.RemoveFinalizer(instruction, peeringFinalizer)
+			if err := r.Update(ctx, instruction); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Ensure finalizer is present
+	if !controllerutil.ContainsFinalizer(instruction, peeringFinalizer) {
+		controllerutil.AddFinalizer(instruction, peeringFinalizer)
+		if err := r.Update(ctx, instruction); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Check if expired
 	if instruction.Spec.ExpiresAt != nil && instruction.Spec.ExpiresAt.Time.Before(time.Now()) {
 		logger.Info("reservation instruction expired",
@@ -56,18 +92,14 @@ func (r *ReservationInstructionReconciler) Reconcile(ctx context.Context, req ct
 			"targetCluster", instruction.Spec.TargetClusterID,
 			"expiresAt", instruction.Spec.ExpiresAt.Time)
 
-		// Mark as not delivered since it's expired
-		if instruction.Status.Delivered {
-			instruction.Status.Delivered = false
-			instruction.Status.LastUpdateTime = metav1.Now()
-
-			if err := r.Status().Update(ctx, instruction); err != nil {
-				logger.Error(err, "failed to mark expired instruction")
-				return ctrl.Result{}, err
-			}
+		// Delete the instruction to trigger the finalizer and teardown
+		logger.Info("Deleting expired reservation instruction to trigger teardown")
+		if err := r.Delete(ctx, instruction); err != nil {
+			logger.Error(err, "failed to delete expired instruction")
+			return ctrl.Result{}, err
 		}
 
-		// No need to requeue - it's expired
+		// No need to requeue - it's expired and being deleted
 		return ctrl.Result{}, nil
 	}
 
@@ -216,6 +248,55 @@ func (r *ReservationInstructionReconciler) executeLiqoPeering(ctx context.Contex
 		return fmt.Errorf("liqoctl peer failed: %w", err)
 	}
 
+	return nil
+}
+
+// executeLiqoUnpeer runs liqoctl unpeer to tear down the connection.
+func (r *ReservationInstructionReconciler) executeLiqoUnpeer(ctx context.Context, targetClusterID string, remoteKubeconfigContent string) error {
+	localKubeconfig := filepath.Join(r.KubeconfigsDir, r.ClusterID+".kubeconfig")
+
+	// Verify local kubeconfig exists
+	if _, err := os.Stat(localKubeconfig); os.IsNotExist(err) {
+		return fmt.Errorf("local kubeconfig not found: %s", localKubeconfig)
+	}
+
+	// Write remote kubeconfig to a temporary file
+	tmpFile, err := os.CreateTemp("", fmt.Sprintf("unpeering-%s-*.kubeconfig", targetClusterID))
+	if err != nil {
+		return fmt.Errorf("failed to create temporary unpeering kubeconfig file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(remoteKubeconfigContent); err != nil {
+		return fmt.Errorf("failed to write into temp unpeering file: %w", err)
+	}
+	tmpFile.Close()
+	remoteKubeconfig := tmpFile.Name()
+
+	// Check that liqoctl is available
+	if _, err := exec.LookPath("liqoctl"); err != nil {
+		return fmt.Errorf("liqoctl not found in PATH: %w", err)
+	}
+
+	// Run liqoctl unpeer with a 2-minute timeout
+	unpeerCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	logger := log.FromContext(ctx).WithName("liqo-unpeer")
+	logger.Info("Executing liqoctl unpeer", "targetCluster", targetClusterID, "kubeconfig", localKubeconfig)
+
+	cmd := exec.CommandContext(unpeerCtx, "liqoctl", "unpeer",
+		"--kubeconfig", localKubeconfig,
+		"--remote-kubeconfig", remoteKubeconfig,
+	)
+
+	// Capture output to see what's wrong
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("liqoctl unpeer failed: %w (output: %s)", err, string(output))
+	}
+
+	logger.Info("liqoctl unpeer succeeded", "output", string(output))
 	return nil
 }
 

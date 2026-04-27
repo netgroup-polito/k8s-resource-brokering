@@ -65,9 +65,17 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var requestedGPU *resource.Quantity
+	if reqDTO.RequestedResources.GPU != "" {
+		gpuParsed, err := resource.ParseQuantity(reqDTO.RequestedResources.GPU)
+		if err == nil && gpuParsed.Sign() > 0 {
+			requestedGPU = &gpuParsed
+		}
+	}
+
 	// Run decision engine synchronously
 	bestCluster, err := h.decisionEngine.SelectBestCluster(
-		ctx, requesterID, requestedCPU, requestedMemory, reqDTO.Priority,
+		ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority,
 	)
 	if err != nil {
 		logger.Error(err, "No suitable cluster found",
@@ -148,28 +156,45 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 	if lockErr != nil {
 		logger.Error(lockErr, "Failed to lock resources")
 		// Mark reservation as failed
-		reservation.Status.Phase = brokerv1alpha1.ReservationPhaseFailed
-		reservation.Status.Message = fmt.Sprintf("Failed to lock resources: %v", lockErr)
-		reservation.Status.LastUpdateTime = metav1.Now()
-		_ = h.k8sClient.Status().Update(ctx, reservation)
+		_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest := &brokerv1alpha1.Reservation{}
+			if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservation.Name, Namespace: reservation.Namespace}, latest); err != nil {
+				return err
+			}
+			latest.Status.Phase = brokerv1alpha1.ReservationPhaseFailed
+			latest.Status.Message = fmt.Sprintf("Failed to lock resources: %v", lockErr)
+			latest.Status.LastUpdateTime = metav1.Now()
+			return h.k8sClient.Status().Update(ctx, latest)
+		})
 
 		respondWithError(w, http.StatusConflict, fmt.Sprintf("Failed to reserve resources: %v", lockErr))
 		return
 	}
 
-	// Mark reservation as Reserved
-	now := metav1.Now()
-	reservation.Status.Phase = brokerv1alpha1.ReservationPhaseReserved
-	reservation.Status.Message = fmt.Sprintf("Resources locked in cluster %s", bestCluster.Spec.ClusterID)
-	reservation.Status.ReservedAt = &now
-	reservation.Status.LastUpdateTime = now
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &brokerv1alpha1.Reservation{}
+		if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservation.Name, Namespace: reservation.Namespace}, latest); err != nil {
+			return err
+		}
 
-	if reservation.Spec.Duration != nil {
-		expiresAt := metav1.NewTime(now.Add(reservation.Spec.Duration.Duration))
-		reservation.Status.ExpiresAt = &expiresAt
-	}
+		latest.Status.Phase = brokerv1alpha1.ReservationPhaseReserved
+		latest.Status.Message = fmt.Sprintf("Resources locked in cluster %s", bestCluster.Spec.ClusterID)
+		now := metav1.Now()
+		latest.Status.ReservedAt = &now
+		latest.Status.LastUpdateTime = now
 
-	if err := h.k8sClient.Status().Update(ctx, reservation); err != nil {
+		if latest.Spec.Duration != nil {
+			expiresAt := metav1.NewTime(now.Add(latest.Spec.Duration.Duration))
+			latest.Status.ExpiresAt = &expiresAt
+		}
+
+		err := h.k8sClient.Status().Update(ctx, latest)
+		if err == nil {
+			// Update local object for the JSON response
+			reservation.Status = latest.Status
+		}
+		return err
+	}); err != nil {
 		logger.Error(err, "Failed to update reservation status")
 	}
 
@@ -245,10 +270,15 @@ func (h *Handler) PostPeeringKubeconfig(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Update reservation status with the credential
-	reservation.Status.PeeringKubeconfig = payload.Kubeconfig
-	reservation.Status.LastUpdateTime = metav1.Now()
-
-	if err := h.k8sClient.Status().Update(ctx, reservation); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &brokerv1alpha1.Reservation{}
+		if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservation.Name, Namespace: reservation.Namespace}, latest); err != nil {
+			return err
+		}
+		latest.Status.PeeringKubeconfig = payload.Kubeconfig
+		latest.Status.LastUpdateTime = metav1.Now()
+		return h.k8sClient.Status().Update(ctx, latest)
+	}); err != nil {
 		logger.Error(err, "Failed to update reservation status with peering kubeconfig")
 		respondWithError(w, http.StatusInternalServerError, "Failed to save peering kubeconfig")
 		return

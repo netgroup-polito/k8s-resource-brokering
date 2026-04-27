@@ -58,6 +58,7 @@ func NewServer(port string, certPath string, handler *handlers.Handler) (*Server
 	mux.HandleFunc("POST /api/v1/advertisements", handler.PostAdvertisement)
 	mux.HandleFunc("GET /api/v1/advertisements/{clusterID}", handler.GetAdvertisement)
 	mux.HandleFunc("POST /api/v1/reservations", handler.PostReservation)
+	mux.HandleFunc("POST /api/v1/evaluations", handler.PostEvaluation)
 	mux.HandleFunc("GET /api/v1/reservations/{id}", handler.GetReservation)
 	mux.HandleFunc("POST /api/v1/reservations/{id}/kubeconfig", handler.PostPeeringKubeconfig)
 	mux.HandleFunc("GET /api/v1/instructions", handler.GetInstructions)

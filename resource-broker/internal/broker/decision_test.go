@@ -60,6 +60,7 @@ func TestSelectBestCluster_PicksClusterWithMoreResources(t *testing.T) {
 		"cluster-0", // requester (not cluster-1 or cluster-2)
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
+		nil, // requestedGPU
 		0, // priority
 	)
 
@@ -87,6 +88,7 @@ func TestSelectBestCluster_SkipsRequesterOwnCluster(t *testing.T) {
 		"cluster-1", // requester IS cluster-1
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
+		nil, // requestedGPU
 		0,
 	)
 
@@ -110,6 +112,7 @@ func TestSelectBestCluster_NoClusterAvailable(t *testing.T) {
 		"cluster-0",
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
+		nil,
 		0,
 	)
 
@@ -133,6 +136,7 @@ func TestSelectBestCluster_SkipsInactiveClusters(t *testing.T) {
 		"cluster-0",
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
+		nil,
 		0,
 	)
 
@@ -160,6 +164,7 @@ func TestSelectBestCluster_RequestExceedsAllClusters(t *testing.T) {
 		"cluster-0",
 		resource.MustParse("10000m"), // 10 cores - too much
 		resource.MustParse("1Gi"),
+		nil,
 		0,
 	)
 
@@ -189,6 +194,7 @@ func TestSelectBestCluster_PrefersHigherAvailableRatio(t *testing.T) {
 		"cluster-0",
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
+		nil,
 		0,
 	)
 
@@ -250,7 +256,7 @@ func TestHasEnoughResources_ChecksBothCPUAndMemory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cluster := makeClusterAdvertisement("test", "test-cluster", "4000m", "8Gi", tt.availableCPU, tt.availableMemory, true)
-			result := engine.hasEnoughResources(cluster, resource.MustParse(tt.requestedCPU), resource.MustParse(tt.requestedMemory))
+			result := engine.hasEnoughResources(cluster, resource.MustParse(tt.requestedCPU), resource.MustParse(tt.requestedMemory), nil)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}

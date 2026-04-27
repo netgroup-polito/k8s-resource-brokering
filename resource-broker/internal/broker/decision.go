@@ -20,6 +20,7 @@ func (d *DecisionEngine) SelectBestCluster(
 	ctx context.Context,
 	requesterID string,
 	requestedCPU, requestedMemory resource.Quantity,
+	requestedGPU *resource.Quantity,
 	priority int32,
 ) (*brokerv1alpha1.ClusterAdvertisement, error) {
 
@@ -50,12 +51,12 @@ func (d *DecisionEngine) SelectBestCluster(
 		}
 
 		// Check if cluster has enough resources
-		if !d.hasEnoughResources(cluster, requestedCPU, requestedMemory) {
+		if !d.hasEnoughResources(cluster, requestedCPU, requestedMemory, requestedGPU) {
 			continue
 		}
 
 		// Calculate score
-		score := d.calculateScore(cluster, requestedCPU, requestedMemory, priority)
+		score := d.calculateScore(cluster, requestedCPU, requestedMemory, requestedGPU, priority)
 
 		if score > bestScore {
 			bestScore = score
@@ -74,11 +75,20 @@ func (d *DecisionEngine) SelectBestCluster(
 func (d *DecisionEngine) hasEnoughResources(
 	cluster *brokerv1alpha1.ClusterAdvertisement,
 	requestedCPU, requestedMemory resource.Quantity,
+	requestedGPU *resource.Quantity,
 ) bool {
 	availableCPU := cluster.Spec.Resources.Available.CPU
 	availableMemory := cluster.Spec.Resources.Available.Memory
 
-	return availableCPU.Cmp(requestedCPU) >= 0 && availableMemory.Cmp(requestedMemory) >= 0
+	hasCPUAndMem := availableCPU.Cmp(requestedCPU) >= 0 && availableMemory.Cmp(requestedMemory) >= 0
+	
+	if requestedGPU != nil && requestedGPU.Sign() > 0 {
+		if cluster.Spec.Resources.Available.GPU == nil || cluster.Spec.Resources.Available.GPU.Cmp(*requestedGPU) < 0 {
+			return false
+		}
+	}
+
+	return hasCPUAndMem
 }
 
 // calculateScore computes a score for the cluster based on availability
@@ -86,6 +96,7 @@ func (d *DecisionEngine) hasEnoughResources(
 func (d *DecisionEngine) calculateScore(
 	cluster *brokerv1alpha1.ClusterAdvertisement,
 	requestedCPU, requestedMemory resource.Quantity,
+	requestedGPU *resource.Quantity,
 	priority int32,
 ) float64 {
 	// Calculate CPU utilization after reservation (0-1)
@@ -102,11 +113,26 @@ func (d *DecisionEngine) calculateScore(
 
 	memoryUtilization := 1.0 - ((availableMemory - requestedMemoryFloat) / allocatableMemory)
 
-	// Cost-Aware Scoring Formula:
-	// Score = (ResourceAvailability * 0.7) + ((1 - EnergyCost) * 0.2) + (Renewable ? 0.1 : 0.0)
+	// Calculate GPU utilization if requested
+	gpuUtilization := 0.0
+	gpuWeight := 0.0
+	if requestedGPU != nil && requestedGPU.Sign() > 0 && cluster.Spec.Resources.Allocatable.GPU != nil {
+		allocatableGPU := cluster.Spec.Resources.Allocatable.GPU.AsApproximateFloat64()
+		availableGPU := cluster.Spec.Resources.Available.GPU.AsApproximateFloat64()
+		requestedGPUFloat := requestedGPU.AsApproximateFloat64()
+		if allocatableGPU > 0 {
+			gpuUtilization = 1.0 - ((availableGPU - requestedGPUFloat) / allocatableGPU)
+			gpuWeight = 0.33 // distribute weight between cpu, mem, gpu
+		}
+	}
 
 	// 1. Resource Availability (0-1) - Lower utilization means higher availability
-	resourceAvailability := ((1.0 - cpuUtilization) * 0.5) + ((1.0 - memoryUtilization) * 0.5)
+	var resourceAvailability float64
+	if gpuWeight > 0 {
+		resourceAvailability = ((1.0 - cpuUtilization) * 0.33) + ((1.0 - memoryUtilization) * 0.34) + ((1.0 - gpuUtilization) * 0.33)
+	} else {
+		resourceAvailability = ((1.0 - cpuUtilization) * 0.5) + ((1.0 - memoryUtilization) * 0.5)
+	}
 
 	// 2. Cost and Renewable factors
 	energyCost := 0.0
@@ -136,7 +162,7 @@ func (d *DecisionEngine) UpdateClusterScore(
 
 	cluster.Status.Score = strconv.FormatFloat(score, 'f', 2, 64)
 
-	return d.Client.Status().Update(ctx, cluster)
+	return nil
 }
 
 // calculateBaseScore computes the base score for a cluster

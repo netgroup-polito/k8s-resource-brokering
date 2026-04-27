@@ -26,101 +26,63 @@ const ReservationFinalizer = "reservation.broker.fluidos.eu/finalizer"
 
 // ReservationSpec defines the desired state of Reservation
 type ReservationSpec struct {
-	// TargetClusterID is the cluster where resources should be reserved
 	// If not specified, the broker will automatically select the best cluster
-	// +optional
 	TargetClusterID string `json:"targetClusterID,omitempty"`
 
-	// RequestedResources are the resources being requested
 	RequestedResources RequestedResourceQuantities `json:"requestedResources"`
 
 	// Duration is how long the reservation should last (optional)
-	// +optional
 	Duration *metav1.Duration `json:"duration,omitempty"`
 
 	// Priority of this reservation (higher number = higher priority)
-	// +optional
 	Priority int32 `json:"priority,omitempty"`
 
 	// RequesterID identifies who is requesting the reservation
-	// +optional
 	RequesterID string `json:"requesterID,omitempty"`
 }
 
 // RequestedResourceQuantities represents requested resource amounts
 type RequestedResourceQuantities struct {
-	// CPU cores requested
 	CPU resource.Quantity `json:"cpu"`
-
-	// Memory requested
 	Memory resource.Quantity `json:"memory"`
-
-	// GPU requested (optional)
-	// +optional
 	GPU *resource.Quantity `json:"gpu,omitempty"`
 
 	// Storage requested (optional)
-	// +optional
 	Storage *resource.Quantity `json:"storage,omitempty"`
 }
 
 // ReservationStatus defines the observed state of Reservation
 type ReservationStatus struct {
-	// Phase represents the current state of the reservation
 	// Possible values: Pending, Reserved, Active, Failed, Released
-	// +optional
 	Phase ReservationPhase `json:"phase,omitempty"`
 
-	// Message provides additional information about the status
-	// +optional
 	Message string `json:"message,omitempty"`
-
-	// ReservedAt is when the reservation was confirmed
-	// +optional
 	ReservedAt *metav1.Time `json:"reservedAt,omitempty"`
-
-	// ExpiresAt is when the reservation expires
-	// +optional
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 
 	// PeeringKubeconfig contains the restricted credentials for the requester
-	// +optional
 	PeeringKubeconfig string `json:"peeringKubeconfig,omitempty"`
 
-	// LastUpdateTime
-	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	// Conditions represent the latest observations of the reservation state
-	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 const (
-	// ReservationConditionRequesterActive indicates the requester signaled readiness.
-	ReservationConditionRequesterActive = "RequesterActive"
-	// ReservationConditionRequesterReleased indicates the requester finished consuming resources.
-	ReservationConditionRequesterReleased = "RequesterReleased"
+	ReservationConditionRequesterActive = "RequesterActive" //indicates the requester signaled readiness
+	ReservationConditionRequesterReleased = "RequesterReleased" //indicates the requester finished consuming resource
 )
 
 // ReservationPhase represents the phase of a reservation
 type ReservationPhase string
 
 const (
-	// ReservationPhasePending - Reservation request is pending
-	ReservationPhasePending ReservationPhase = "Pending"
-
-	// ReservationPhaseReserved - Resources are reserved but not yet active
-	ReservationPhaseReserved ReservationPhase = "Reserved"
-
-	// ReservationPhaseActive - Reservation is active and in use
-	ReservationPhaseActive ReservationPhase = "Active"
-
-	// ReservationPhaseFailed - Reservation failed
-	ReservationPhaseFailed ReservationPhase = "Failed"
-
-	// ReservationPhaseReleased - Reservation has been released
-	ReservationPhaseReleased ReservationPhase = "Released"
+	ReservationPhasePending ReservationPhase = "Pending" //Reservation request is pending
+	ReservationPhaseReserved ReservationPhase = "Reserved" //Resources are reserved but not yet active
+	ReservationPhaseActive ReservationPhase = "Active" //Reservation is active and in use
+	ReservationPhaseFailed ReservationPhase = "Failed" //Reservation failed
+	ReservationPhaseReleased ReservationPhase = "Released" //Reservation has been released
 )
 
 // +kubebuilder:object:root=true

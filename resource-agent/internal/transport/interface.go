@@ -19,6 +19,10 @@ type BrokerCommunicator interface {
 	// in the response. No polling needed.
 	RequestReservation(ctx context.Context, req *dto.ReservationRequestDTO) (*dto.ReservationDTO, error)
 
+	// EvaluateProviders queries the broker to find the best provider for the
+	// requested resources without making a reservation.
+	EvaluateProviders(ctx context.Context, req *dto.ReservationRequestDTO) (*dto.EvaluationResponseDTO, error)
+
 	// FetchInstructions polls the broker for pending provider instructions.
 	// This provides near-instant instruction delivery (every few seconds)
 	// instead of waiting for the next advertisement cycle.

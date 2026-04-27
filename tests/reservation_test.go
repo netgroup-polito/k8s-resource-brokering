@@ -60,15 +60,15 @@ func TestReservationFlow(t *testing.T) {
 		if err := brokerClient.List(ctx, advList); err != nil {
 			return err
 		}
-		if len(advList.Items) < 2 {
-			return fmt.Errorf("waiting for 2 agents, found %d", len(advList.Items))
+		if len(advList.Items) < 1 {
+			return fmt.Errorf("waiting for 1 provider agent, found %d", len(advList.Items))
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("agents did not register on broker: %v", err)
 	}
-	t.Log("Both agents registered!")
+	t.Log("Provider agent registered!")
 
 	// 3. Create ResourceRequest on Agent 1
 	requestName := fmt.Sprintf("test-request-%d", time.Now().Unix())
@@ -87,6 +87,7 @@ func TestReservationFlow(t *testing.T) {
 			RequestedCPU:    "500m",
 			RequestedMemory: "256Mi",
 			Priority:        10,
+			Duration:        "2m",
 		},
 	}
 
@@ -169,8 +170,8 @@ func TestReservationFlow(t *testing.T) {
 	}
 
 	// Cleanup
-	t.Log("Cleaning up ResourceRequest...")
-	_ = agent1Client.Delete(ctx, resRequest)
+	t.Log("Not cleaning up ResourceRequest so you can test offloading manually! It will expire in 2 minutes.")
+	// _ = agent1Client.Delete(ctx, resRequest)
 }
 
 // getClient creates a Kubernetes client for the given context and scheme.

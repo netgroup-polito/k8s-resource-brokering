@@ -18,23 +18,22 @@ type ProviderInstructionSpec struct {
 	// RequestedMemory amount.
 	RequestedMemory string `json:"requestedMemory"`
 
+	// RequestedGPU amount.
+	RequestedGPU string `json:"requestedGPU,omitempty"`
+
 	// Message is a human description.
-	// +optional
 	Message string `json:"message,omitempty"`
 
 	// ExpiresAt mirrors broker expiry.
-	// +optional
 	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 }
 
 // ProviderInstructionStatus tracks enforcement.
 type ProviderInstructionStatus struct {
 	// Enforced marks whether the provider controller acknowledged the instruction.
-	// +optional
 	Enforced bool `json:"enforced,omitempty"`
 
 	// LastUpdateTime records status updates.
-	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 }
 

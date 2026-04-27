@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	k8sretry "k8s.io/client-go/util/retry"
 
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/broker"
@@ -61,44 +62,62 @@ func (r *ClusterAdvertisementReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	// Recalculate Available using single source of truth
-	resource.UpdateAvailableResources(&clusterAdv.Spec.Resources)
+	// First retry loop: update the Spec if needed
+	err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		latest := &brokerv1alpha1.ClusterAdvertisement{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
 
-	// Update the spec with recalculated available
-	if err := r.Update(ctx, clusterAdv); err != nil {
+		// Recalculate Available using single source of truth
+		resource.UpdateAvailableResources(&latest.Spec.Resources)
+
+		// Update the spec with recalculated available
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
 		logger.Error(err, "Failed to update available resources")
 		// Continue anyway to update status
 	}
 
-	// Check if advertisement is stale
-	age := time.Since(clusterAdv.Spec.Timestamp.Time)
-	stalenessThreshold := r.StalenessThreshold
-	if stalenessThreshold == 0 {
-		stalenessThreshold = 2 * time.Minute // Default: 2 minutes (reduced from 10)
-	}
-	isStale := age > stalenessThreshold
+	// Second retry loop: update the Status
+	err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		latest := &brokerv1alpha1.ClusterAdvertisement{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
 
-	// Update status
-	clusterAdv.Status.Active = !isStale
-	if isStale {
-		clusterAdv.Status.Phase = "Stale"
-		clusterAdv.Status.Message = "Advertisement has not been updated recently"
-	} else {
-		clusterAdv.Status.Phase = "Active"
-		clusterAdv.Status.Message = "Cluster is active and available"
-	}
+		// Check if advertisement is stale
+		age := time.Since(latest.Spec.Timestamp.Time)
+		stalenessThreshold := r.StalenessThreshold
+		if stalenessThreshold == 0 {
+			stalenessThreshold = 2 * time.Minute // Default: 2 minutes
+		}
+		isStale := age > stalenessThreshold
 
-	// Calculate and update score
-	if err := r.DecisionEngine.UpdateClusterScore(ctx, clusterAdv); err != nil {
-		logger.Error(err, "Failed to update cluster score")
-	}
+		// Update status
+		latest.Status.Active = !isStale
+		if isStale {
+			latest.Status.Phase = "Stale"
+			latest.Status.Message = "Advertisement has not been updated recently"
+		} else {
+			latest.Status.Phase = "Active"
+			latest.Status.Message = "Cluster is active and available"
+		}
 
-	// Update conditions
-	r.updateConditions(clusterAdv, isStale)
+		// Calculate and update score
+		if err := r.DecisionEngine.UpdateClusterScore(ctx, latest); err != nil {
+			logger.Error(err, "Failed to update cluster score")
+		}
 
-	clusterAdv.Status.LastUpdateTime = metav1.Now()
+		// Update conditions
+		r.updateConditions(latest, isStale)
+		latest.Status.LastUpdateTime = metav1.Now()
 
-	if err := r.Status().Update(ctx, clusterAdv); err != nil {
+		return r.Status().Update(ctx, latest)
+	})
+
+	if err != nil {
 		logger.Error(err, "Failed to update ClusterAdvertisement status")
 		return ctrl.Result{}, err
 	}

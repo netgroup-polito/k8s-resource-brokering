@@ -152,6 +152,7 @@ func (r *ReservationReconciler) handlePendingReservation(
 		reservation.Spec.RequesterID,
 		reservation.Spec.RequestedResources.CPU,
 		reservation.Spec.RequestedResources.Memory,
+		reservation.Spec.RequestedResources.GPU,
 		reservation.Spec.Priority,
 	)
 

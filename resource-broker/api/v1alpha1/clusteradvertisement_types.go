@@ -23,25 +23,16 @@ import (
 
 // ClusterAdvertisementSpec defines the desired state of ClusterAdvertisement
 type ClusterAdvertisementSpec struct {
-	// ClusterID is the unique identifier of the source cluster
-	ClusterID string `json:"clusterID"`
-
-	// ClusterName is a human-readable name for the cluster
-	// +optional
-	ClusterName string `json:"clusterName,omitempty"`
-
-	// Resources available in the cluster
-	Resources ResourceMetrics `json:"resources"`
-
-	// Cost information (optional)
-	// +optional
+	ClusterID   string          `json:"clusterID"`
+	//omitempty = 
+	ClusterName string          `json:"clusterName,omitempty"` //omit empty allows to not include in JSON if empty
+	Resources   ResourceMetrics `json:"resources"`
 	Cost *CostInfo `json:"cost,omitempty"`
 
 	// Timestamp when this advertisement was received
 	Timestamp metav1.Time `json:"timestamp"`
 
 	// EndpointURL is the API endpoint of the source cluster
-	// +optional
 	EndpointURL string `json:"endpointURL,omitempty"`
 }
 
@@ -56,28 +47,25 @@ type ResourceMetrics struct {
 	// Allocated - Sum of resources requested by all pods
 	Allocated ResourceQuantities `json:"allocated"`
 
-	// Reserved - Resources locked by reservations (NEW!)
-	// +optional
+	// Reserved - Resources locked by reservations 
 	Reserved *ResourceQuantities `json:"reserved,omitempty"`
 
-	// Available - Allocatable minus Allocated (what's still schedulable)
+	// Available - Allocatable minus Allocated 
 	Available ResourceQuantities `json:"available"`
 }
 
 // ResourceQuantities represents resource amounts
 type ResourceQuantities struct {
-	// CPU in cores
+	// CPU in cores [resource is a package of k8s.io/apimachinery/pkg/api/resource, used to reppresent CPU, memory,.. as quantity]
 	CPU resource.Quantity `json:"cpu"`
 
 	// Memory in bytes
 	Memory resource.Quantity `json:"memory"`
 
-	// GPU (optional)
-	// +optional
+	// GPU
 	GPU *resource.Quantity `json:"gpu,omitempty"`
 
 	// Storage (optional)
-	// +optional
 	Storage *resource.Quantity `json:"storage,omitempty"`
 }
 
@@ -93,49 +81,56 @@ type CostInfo struct {
 	Currency string `json:"currency,omitempty"`
 
 	// Renewable indicates if the cluster uses renewable energy
-	// +optional
 	Renewable bool `json:"renewable,omitempty"`
 
 	// EnergyCost is the cost of energy (0-1 normalization recommended)
-	// +optional
 	EnergyCost float64 `json:"energyCost,omitempty"`
 }
 
 // ClusterAdvertisementStatus defines the observed state of ClusterAdvertisement
 type ClusterAdvertisementStatus struct {
 	// Phase represents the current state
-	// +optional
 	Phase string `json:"phase,omitempty"`
 
 	// LastUpdateTime is when this advertisement was last updated
-	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	// Active indicates if this cluster is currently available
-	// +optional
 	Active bool `json:"active,omitempty"`
 
 	// Message provides additional information
-	// +optional
 	Message string `json:"message,omitempty"`
 
 	// Score is calculated based on availability and cost (higher is better)
-	// +optional
 	Score string `json:"score,omitempty"`
 
 	// Conditions represent the latest observations of the cluster advertisement state
-	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 const (
-	// ClusterAdvertisementConditionReady indicates the cluster is ready to accept reservations
-	ClusterAdvertisementConditionReady = "Ready"
-	// ClusterAdvertisementConditionStale indicates the advertisement is stale
-	ClusterAdvertisementConditionStale = "Stale"
-	// ClusterAdvertisementConditionOvercommitted indicates reserved > available
-	ClusterAdvertisementConditionOvercommitted = "Overcommitted"
+	ClusterAdvertisementConditionReady = "Ready" //the cluster is ready to accept reservations
+	ClusterAdvertisementConditionStale = "Stale" //the advertisement is stale
+	ClusterAdvertisementConditionOvercommitted = "Overcommitted" //indicates reserved > available
 )
+
+
+
+
+
+/*HOW TO USE KUBEBUILDER MARKERS
+This is a way to autogenerate Kubernetes API types using kubebuilder. 
+The comments with +kubebuilder:... are markers that kubebuilder uses to generate code and CRD manifests. 
+For example, +kubebuilder:object:root=true indicates that this struct is a root object in the API, 
++kubebuilder:subresource:status indicates that it has a status subresource 
+and the printcolumn markers define how the resource will be displayed when "kubectl get clusteradvertisement".
+
+In fact, in our case we generate the crd for the ClusterAdvertisement resource (struct defined below)
+that will be normalized in "clusteradvertisements" and will be used by the Resource Broker to store the advertisements received from the Resource Agents.
+
+If we use kubectl get clusteradvertisements, the output will include columns for ClusterID, Available-CPU, ..
+*/
+
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -156,6 +151,9 @@ type ClusterAdvertisement struct {
 	Status ClusterAdvertisementStatus `json:"status,omitempty"`
 }
 
+
+// kubectl get clusteradvertisements will show the various clusteradvertisements with the columns defined above
+
 // +kubebuilder:object:root=true
 
 // ClusterAdvertisementList contains a list of ClusterAdvertisement
@@ -165,6 +163,7 @@ type ClusterAdvertisementList struct {
 	Items           []ClusterAdvertisement `json:"items"`
 }
 
+// init() is called when the package is initialized. Here we register our types with the scheme so that they can be used by the controller-runtime and the API machinery.
 func init() {
 	SchemeBuilder.Register(&ClusterAdvertisement{}, &ClusterAdvertisementList{})
 }

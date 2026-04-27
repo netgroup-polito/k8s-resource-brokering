@@ -72,7 +72,19 @@ func DeployBroker(rootDir string) error {
 	cmd = exec.Command("kubectl", "apply", "-f", manifestPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Restart deployment to ensure new image is used
+	restartCmd := exec.Command("kubectl", "rollout", "restart", "deployment/resource-broker", "-n", "default")
+	restartCmd.Stdout = os.Stdout
+	restartCmd.Stderr = os.Stderr
+	if err := restartCmd.Run(); err != nil {
+		fmt.Printf("Warning: failed to restart broker deployment: %v\n", err)
+	}
+
+	return nil
 }
 
 func switchContext(context string) error {
@@ -88,13 +100,16 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 	
 	//GO: vedi linea 16
 	agents := []struct {
-		clusterName string
-		id          string
-		renewable   string
-		cost        string
+		clusterName        string
+		id                 string
+		renewable          string
+		cost               string
+		role               string
+		sharingLogic       string
+		sharingPercentage  string
 	}{
-		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5"},
-		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8"},
+		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100"},
+		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80"},
 	}
 
 	for _, agent := range agents {
@@ -129,6 +144,9 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"agent-cluster-1\" # To be overridden or templated", "value: \""+agent.id+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"true\"", "value: \""+agent.renewable+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"0.5\"", "value: \""+agent.cost+"\"")
+		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"provider\"", "value: \""+agent.role+"\"")
+		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"all\"", "value: \""+agent.sharingLogic+"\"")
+		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"100\"", "value: \""+agent.sharingPercentage+"\"")
 
 		cmd = exec.Command("kubectl", "apply", "-f", "-")
 		cmd.Stdin = strings.NewReader(modifiedContent)
@@ -136,6 +154,14 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to deploy agent to %s: %w", agent.clusterName, err)
+		}
+
+		// Restart deployment to ensure new image is used
+		restartCmd := exec.Command("kubectl", "rollout", "restart", "deployment/resource-agent", "-n", "default")
+		restartCmd.Stdout = os.Stdout
+		restartCmd.Stderr = os.Stderr
+		if err := restartCmd.Run(); err != nil {
+			fmt.Printf("Warning: failed to restart agent deployment on %s: %v\n", agent.clusterName, err)
 		}
 	}
 

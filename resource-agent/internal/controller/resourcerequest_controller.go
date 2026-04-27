@@ -3,11 +3,13 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -45,7 +47,50 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Skip if already processed (Reserved or Failed)
-	if resourceReq.Status.Phase == "Reserved" || resourceReq.Status.Phase == "Failed" {
+	if resourceReq.Status.Phase == "Reserved" {
+		// Periodically re-evaluate (every hour)
+		if r.BrokerCommunicator != nil {
+			logger.Info("Re-evaluating best provider", "current", resourceReq.Status.TargetClusterID)
+			evalReq := &dto.ReservationRequestDTO{
+				RequestedResources: dto.ResourceQuantitiesDTO{
+					CPU:    resourceReq.Spec.RequestedCPU,
+					Memory: resourceReq.Spec.RequestedMemory,
+					GPU:    resourceReq.Spec.RequestedGPU,
+				},
+				Priority: resourceReq.Spec.Priority,
+				Duration: resourceReq.Spec.Duration,
+			}
+
+			evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
+			if err != nil {
+				logger.Error(err, "Failed to evaluate providers")
+			} else if evaluation.TargetClusterID != "" && evaluation.TargetClusterID != resourceReq.Status.TargetClusterID {
+				logger.Info("Found better provider!", "old", resourceReq.Status.TargetClusterID, "new", evaluation.TargetClusterID)
+
+				// 1. Delete old instruction to trigger teardown
+				ns := r.InstructionNamespace
+				if ns == "" {
+					ns = resourceReq.Namespace
+				}
+				oldInstruction := &rearv1alpha1.ReservationInstruction{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      resourceReq.Status.ReservationName,
+						Namespace: ns,
+					},
+				}
+
+				if err := r.Delete(ctx, oldInstruction); err != nil && !apierrors.IsNotFound(err) {
+					logger.Error(err, "Failed to delete old instruction")
+				}
+
+				// 2. Set phase to Pending so we request a new reservation
+				return r.updateStatus(ctx, resourceReq, "Pending", "", "", "Switching to a better provider: "+evaluation.TargetClusterID)
+			}
+		}
+		return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
+	}
+
+	if resourceReq.Status.Phase == "Failed" {
 		return ctrl.Result{}, nil
 	}
 
@@ -74,6 +119,7 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		RequestedResources: dto.ResourceQuantitiesDTO{
 			CPU:    resourceReq.Spec.RequestedCPU,
 			Memory: resourceReq.Spec.RequestedMemory,
+			GPU:    resourceReq.Spec.RequestedGPU,
 		},
 		Priority: resourceReq.Spec.Priority,
 		Duration: resourceReq.Spec.Duration,
@@ -141,10 +187,12 @@ func (r *ResourceRequestReconciler) createReservationInstruction(
 			TargetClusterID: reservation.TargetClusterID,
 			RequestedCPU:    reservation.RequestedResources.CPU,
 			RequestedMemory: reservation.RequestedResources.Memory,
-			Message: fmt.Sprintf("Use %s for %s CPU / %s Memory",
+			RequestedGPU:    reservation.RequestedResources.GPU,
+			Message: fmt.Sprintf("Use %s for %s CPU / %s Memory / %s GPU",
 				reservation.TargetClusterID,
 				reservation.RequestedResources.CPU,
-				reservation.RequestedResources.Memory),
+				reservation.RequestedResources.Memory,
+				reservation.RequestedResources.GPU),
 			ExpiresAt: expiresAt,
 		},
 	}
@@ -157,13 +205,22 @@ func (r *ResourceRequestReconciler) updateStatus(
 	resourceReq *rearv1alpha1.ResourceRequest,
 	phase, targetClusterID, reservationName, message string,
 ) (ctrl.Result, error) {
-	resourceReq.Status.Phase = phase
-	resourceReq.Status.TargetClusterID = targetClusterID
-	resourceReq.Status.ReservationName = reservationName
-	resourceReq.Status.Message = message
-	resourceReq.Status.LastUpdateTime = metav1.Now()
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &rearv1alpha1.ResourceRequest{}
+		if err := r.Get(ctx, types.NamespacedName{Name: resourceReq.Name, Namespace: resourceReq.Namespace}, latest); err != nil {
+			return err
+		}
 
-	if err := r.Status().Update(ctx, resourceReq); err != nil {
+		latest.Status.Phase = phase
+		latest.Status.TargetClusterID = targetClusterID
+		latest.Status.ReservationName = reservationName
+		latest.Status.Message = message
+		latest.Status.LastUpdateTime = metav1.Now()
+
+		return r.Status().Update(ctx, latest)
+	})
+
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil

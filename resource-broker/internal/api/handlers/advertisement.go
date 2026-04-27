@@ -13,6 +13,7 @@ import (
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/api/middleware"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/transport/dto"
+	k8sretry "k8s.io/client-go/util/retry"
 )
 
 // PostAdvertisement handles POST /api/v1/advertisements
@@ -56,17 +57,33 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 
 	if err == nil {
 		// Advertisement exists - CRITICAL: Preserve Reserved field
-		if existing.Spec.Resources.Reserved != nil {
-			logger.Info("Preserving Reserved field from existing advertisement",
-				"cpu", existing.Spec.Resources.Reserved.CPU.String(),
-				"memory", existing.Spec.Resources.Reserved.Memory.String())
-			clusterAdv.Spec.Resources.Reserved = existing.Spec.Resources.Reserved
-		}
+		importRetry := true
+		_ = importRetry // Just to note that we might need to add retry import if not present
 
-		// Update existing advertisement
-		clusterAdv.ResourceVersion = existing.ResourceVersion
-		if err := h.k8sClient.Update(ctx, clusterAdv); err != nil {
-			logger.Error(err, "Failed to update advertisement")
+		// We will use retry on conflict here
+		err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			// Re-fetch the latest advertisement
+			latest := &brokerv1alpha1.ClusterAdvertisement{}
+			if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: advName, Namespace: h.namespace}, latest); err != nil {
+				return err
+			}
+
+			// Convert again to have fresh object with new values
+			clusterAdvRetry, err2 := dto.ToClusterAdvertisement(&incomingAdv, h.namespace)
+			if err2 != nil {
+				return err2
+			}
+
+			if latest.Spec.Resources.Reserved != nil {
+				clusterAdvRetry.Spec.Resources.Reserved = latest.Spec.Resources.Reserved
+			}
+
+			clusterAdvRetry.ResourceVersion = latest.ResourceVersion
+			return h.k8sClient.Update(ctx, clusterAdvRetry)
+		})
+
+		if err != nil {
+			logger.Error(err, "Failed to update advertisement after retries")
 			http.Error(w, fmt.Sprintf("Failed to update advertisement: %v", err),
 				http.StatusInternalServerError)
 			return
