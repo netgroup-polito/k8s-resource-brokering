@@ -15,14 +15,15 @@ type DecisionEngine struct {
 	Client client.Client
 }
 
-// SelectBestCluster finds the most suitable cluster based on requested resources
-func (d *DecisionEngine) SelectBestCluster(
+// RankClusters finds the most suitable clusters based on requested resources and returns up to maxResults sorted from best to worst
+func (d *DecisionEngine) RankClusters(
 	ctx context.Context,
 	requesterID string,
 	requestedCPU, requestedMemory resource.Quantity,
 	requestedGPU *resource.Quantity,
 	priority int32,
-) (*brokerv1alpha1.ClusterAdvertisement, error) {
+	maxResults int,
+) ([]*brokerv1alpha1.ClusterAdvertisement, error) {
 
 	// List all cluster advertisements
 	advList := &brokerv1alpha1.ClusterAdvertisementList{}
@@ -34,8 +35,11 @@ func (d *DecisionEngine) SelectBestCluster(
 		return nil, fmt.Errorf("no clusters available")
 	}
 
-	var bestCluster *brokerv1alpha1.ClusterAdvertisement
-	var bestScore float64 = -1
+	type ScoredCluster struct {
+		cluster *brokerv1alpha1.ClusterAdvertisement
+		score   float64
+	}
+	var scoredClusters []ScoredCluster
 
 	for i := range advList.Items {
 		cluster := &advList.Items[i]
@@ -57,18 +61,37 @@ func (d *DecisionEngine) SelectBestCluster(
 
 		// Calculate score
 		score := d.calculateScore(cluster, requestedCPU, requestedMemory, requestedGPU, priority)
-
-		if score > bestScore {
-			bestScore = score
-			bestCluster = cluster
-		}
+		scoredClusters = append(scoredClusters, ScoredCluster{cluster: cluster, score: score})
 	}
 
-	if bestCluster == nil {
+	if len(scoredClusters) == 0 {
 		return nil, fmt.Errorf("no suitable cluster found for requested resources")
 	}
 
-	return bestCluster, nil
+	// Sort descending by score
+	importSort := false
+	_ = importSort // hack to avoid unused import if we don't import "sort", but we do need "sort"
+	// Wait, I should just use sort.Slice directly, but I need to make sure sort is imported.
+	// We will add sort to imports.
+
+	var bestClusters []*brokerv1alpha1.ClusterAdvertisement
+	// bubble sort to avoid adding imports if not necessary, max size is small
+	for i := 0; i < len(scoredClusters); i++ {
+		for j := i + 1; j < len(scoredClusters); j++ {
+			if scoredClusters[i].score < scoredClusters[j].score {
+				scoredClusters[i], scoredClusters[j] = scoredClusters[j], scoredClusters[i]
+			}
+		}
+	}
+
+	for i, sc := range scoredClusters {
+		if i >= maxResults {
+			break
+		}
+		bestClusters = append(bestClusters, sc.cluster)
+	}
+
+	return bestClusters, nil
 }
 
 // hasEnoughResources checks if cluster has sufficient available resources

@@ -64,8 +64,9 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
 			if err != nil {
 				logger.Error(err, "Failed to evaluate providers")
-			} else if evaluation.TargetClusterID != "" && evaluation.TargetClusterID != resourceReq.Status.TargetClusterID {
-				logger.Info("Found better provider!", "old", resourceReq.Status.TargetClusterID, "new", evaluation.TargetClusterID)
+			} else if len(evaluation.CandidateClusters) > 0 && evaluation.CandidateClusters[0] != resourceReq.Status.TargetClusterID {
+				newTarget := evaluation.CandidateClusters[0]
+				logger.Info("Found better provider!", "old", resourceReq.Status.TargetClusterID, "new", newTarget)
 
 				// 1. Delete old instruction to trigger teardown
 				ns := r.InstructionNamespace
@@ -84,7 +85,7 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				}
 
 				// 2. Set phase to Pending so we request a new reservation
-				return r.updateStatus(ctx, resourceReq, "Pending", "", "", "Switching to a better provider: "+evaluation.TargetClusterID)
+				return r.updateStatus(ctx, resourceReq, "Pending", "", "", "Switching to a better provider: "+newTarget)
 			}
 		}
 		return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
@@ -114,8 +115,8 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Send synchronous reservation request to broker
-	reservationReq := &dto.ReservationRequestDTO{
+	// Phase 1: Evaluate providers to get the ranked list
+	evalReq := &dto.ReservationRequestDTO{
 		RequestedResources: dto.ResourceQuantitiesDTO{
 			CPU:    resourceReq.Spec.RequestedCPU,
 			Memory: resourceReq.Spec.RequestedMemory,
@@ -125,13 +126,35 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		Duration: resourceReq.Spec.Duration,
 	}
 
-	reservation, err := r.BrokerCommunicator.RequestReservation(ctx, reservationReq)
+	evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
 	if err != nil {
-		logger.Error(err, "Reservation request failed",
+		logger.Error(err, "Provider evaluation failed",
 			"cpu", resourceReq.Spec.RequestedCPU,
 			"memory", resourceReq.Spec.RequestedMemory)
 		return r.updateStatus(ctx, resourceReq, "Failed", "", "",
-			fmt.Sprintf("Reservation request failed: %v", err))
+			fmt.Sprintf("Provider evaluation failed: %v", err))
+	}
+
+	if len(evaluation.CandidateClusters) == 0 {
+		logger.Info("No suitable provider found")
+		return r.updateStatus(ctx, resourceReq, "Failed", "", "",
+			"No suitable provider found")
+	}
+
+	// For simplicity, we just pick the first (best) candidate from the list
+	bestCandidate := evaluation.CandidateClusters[0]
+	logger.Info("Evaluation complete", "candidates", evaluation.CandidateClusters, "selected", bestCandidate)
+
+	// Phase 2: Send synchronous reservation request for the specific target
+	evalReq.TargetClusterID = bestCandidate
+	reservation, err := r.BrokerCommunicator.RequestReservation(ctx, evalReq)
+	if err != nil {
+		logger.Error(err, "Reservation request failed",
+			"target", bestCandidate,
+			"cpu", resourceReq.Spec.RequestedCPU,
+			"memory", resourceReq.Spec.RequestedMemory)
+		return r.updateStatus(ctx, resourceReq, "Failed", bestCandidate, "",
+			fmt.Sprintf("Reservation request to %s failed: %v", bestCandidate, err))
 	}
 
 	// Create ReservationInstruction from the response

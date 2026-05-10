@@ -46,7 +46,7 @@ func createFakeClient(objects ...runtime.Object) client.Client {
 }
 
 // Test: When two clusters exist, pick the one with more available resources
-func TestSelectBestCluster_PicksClusterWithMoreResources(t *testing.T) {
+func TestRankClusters_PicksClusterWithMoreResources(t *testing.T) {
 	// Setup: cluster-1 has 1000m CPU, cluster-2 has 4000m CPU
 	cluster1 := makeClusterAdvertisement("cluster-1-adv", "cluster-1", "2000m", "4Gi", "1000m", "2Gi", true)
 	cluster2 := makeClusterAdvertisement("cluster-2-adv", "cluster-2", "8000m", "16Gi", "4000m", "8Gi", true)
@@ -55,26 +55,27 @@ func TestSelectBestCluster_PicksClusterWithMoreResources(t *testing.T) {
 	engine := &DecisionEngine{Client: fakeClient}
 
 	// Request 500m CPU, 1Gi memory from requester "cluster-0"
-	result, err := engine.SelectBestCluster(
+	results, err := engine.RankClusters(
 		context.Background(),
 		"cluster-0", // requester (not cluster-1 or cluster-2)
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
 		nil, // requestedGPU
-		0, // priority
+		0,   // priority
+		1,   // maxResults
 	)
 
 	// Verify: should pick cluster-2 (more headroom = higher score)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Spec.ClusterID != "cluster-2" {
-		t.Errorf("expected cluster-2, got %s", result.Spec.ClusterID)
+	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-2" {
+		t.Errorf("expected cluster-2, got %v", results)
 	}
 }
 
 // Test: Never pick the requester's own cluster
-func TestSelectBestCluster_SkipsRequesterOwnCluster(t *testing.T) {
+func TestRankClusters_SkipsRequesterOwnCluster(t *testing.T) {
 	// Setup: cluster-1 is the requester, cluster-2 is available
 	cluster1 := makeClusterAdvertisement("cluster-1-adv", "cluster-1", "8000m", "16Gi", "6000m", "12Gi", true)
 	cluster2 := makeClusterAdvertisement("cluster-2-adv", "cluster-2", "4000m", "8Gi", "2000m", "4Gi", true)
@@ -83,37 +84,39 @@ func TestSelectBestCluster_SkipsRequesterOwnCluster(t *testing.T) {
 	engine := &DecisionEngine{Client: fakeClient}
 
 	// cluster-1 requests resources (should not pick itself even though it has more)
-	result, err := engine.SelectBestCluster(
+	results, err := engine.RankClusters(
 		context.Background(),
 		"cluster-1", // requester IS cluster-1
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
 		nil, // requestedGPU
 		0,
+		1,
 	)
 
 	// Verify: must pick cluster-2, not cluster-1
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Spec.ClusterID != "cluster-2" {
-		t.Errorf("expected cluster-2, got %s (should never pick own cluster)", result.Spec.ClusterID)
+	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-2" {
+		t.Errorf("expected cluster-2, got %v (should never pick own cluster)", results)
 	}
 }
 
 // Test: Return error when no clusters are available at all
-func TestSelectBestCluster_NoClusterAvailable(t *testing.T) {
+func TestRankClusters_NoClusterAvailable(t *testing.T) {
 	// Setup: no clusters in the system
 	fakeClient := createFakeClient() // empty
 	engine := &DecisionEngine{Client: fakeClient}
 
-	_, err := engine.SelectBestCluster(
+	_, err := engine.RankClusters(
 		context.Background(),
 		"cluster-0",
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
 		nil,
 		0,
+		1,
 	)
 
 	// Verify: should return error
@@ -123,7 +126,7 @@ func TestSelectBestCluster_NoClusterAvailable(t *testing.T) {
 }
 
 // Test: Skip inactive clusters
-func TestSelectBestCluster_SkipsInactiveClusters(t *testing.T) {
+func TestRankClusters_SkipsInactiveClusters(t *testing.T) {
 	// Setup: cluster-1 is inactive (has more resources), cluster-2 is active
 	cluster1 := makeClusterAdvertisement("cluster-1-adv", "cluster-1", "8000m", "16Gi", "6000m", "12Gi", false) // inactive
 	cluster2 := makeClusterAdvertisement("cluster-2-adv", "cluster-2", "4000m", "8Gi", "2000m", "4Gi", true)   // active
@@ -131,26 +134,27 @@ func TestSelectBestCluster_SkipsInactiveClusters(t *testing.T) {
 	fakeClient := createFakeClient(cluster1, cluster2)
 	engine := &DecisionEngine{Client: fakeClient}
 
-	result, err := engine.SelectBestCluster(
+	results, err := engine.RankClusters(
 		context.Background(),
 		"cluster-0",
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
 		nil,
 		0,
+		1,
 	)
 
 	// Verify: should pick cluster-2 (active), not cluster-1 (inactive)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Spec.ClusterID != "cluster-2" {
-		t.Errorf("expected cluster-2 (active), got %s", result.Spec.ClusterID)
+	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-2" {
+		t.Errorf("expected cluster-2 (active), got %v", results)
 	}
 }
 
 // Test: Return error when request exceeds all clusters' capacity
-func TestSelectBestCluster_RequestExceedsAllClusters(t *testing.T) {
+func TestRankClusters_RequestExceedsAllClusters(t *testing.T) {
 	// Setup: clusters have 1000m and 2000m available CPU
 	cluster1 := makeClusterAdvertisement("cluster-1-adv", "cluster-1", "2000m", "4Gi", "1000m", "2Gi", true)
 	cluster2 := makeClusterAdvertisement("cluster-2-adv", "cluster-2", "4000m", "8Gi", "2000m", "4Gi", true)
@@ -159,13 +163,14 @@ func TestSelectBestCluster_RequestExceedsAllClusters(t *testing.T) {
 	engine := &DecisionEngine{Client: fakeClient}
 
 	// Request 10000m CPU - more than any cluster has
-	_, err := engine.SelectBestCluster(
+	_, err := engine.RankClusters(
 		context.Background(),
 		"cluster-0",
 		resource.MustParse("10000m"), // 10 cores - too much
 		resource.MustParse("1Gi"),
 		nil,
 		0,
+		1,
 	)
 
 	// Verify: should return error
@@ -178,7 +183,7 @@ func TestSelectBestCluster_RequestExceedsAllClusters(t *testing.T) {
 // The scoring algorithm calculates post-reservation utilization as:
 //   utilization = 1.0 - ((available - requested) / allocatable)
 // Lower utilization = higher score
-func TestSelectBestCluster_PrefersHigherAvailableRatio(t *testing.T) {
+func TestRankClusters_PrefersHigherAvailableRatio(t *testing.T) {
 	// Setup: both have same available (2000m), but different allocatable
 	// cluster-1: 2000m available / 4000m allocatable = 50% free → lower post-request utilization
 	// cluster-2: 2000m available / 8000m allocatable = 25% free → higher post-request utilization
@@ -189,21 +194,22 @@ func TestSelectBestCluster_PrefersHigherAvailableRatio(t *testing.T) {
 	fakeClient := createFakeClient(cluster1, cluster2)
 	engine := &DecisionEngine{Client: fakeClient}
 
-	result, err := engine.SelectBestCluster(
+	results, err := engine.RankClusters(
 		context.Background(),
 		"cluster-0",
 		resource.MustParse("500m"),
 		resource.MustParse("1Gi"),
 		nil,
 		0,
+		1,
 	)
 
 	// Verify: should pick cluster-1 (higher available/allocatable ratio = better score)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Spec.ClusterID != "cluster-1" {
-		t.Errorf("expected cluster-1 (higher available ratio), got %s", result.Spec.ClusterID)
+	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-1" {
+		t.Errorf("expected cluster-1 (higher available ratio), got %v", results)
 	}
 }
 

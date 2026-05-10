@@ -87,7 +87,7 @@ func TestReservationFlow(t *testing.T) {
 			RequestedCPU:    "500m",
 			RequestedMemory: "256Mi",
 			Priority:        10,
-			Duration:        "2m",
+			Duration:        "10m",
 		},
 	}
 

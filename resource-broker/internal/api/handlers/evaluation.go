@@ -63,9 +63,9 @@ func (h *Handler) PostEvaluation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Run decision engine synchronously
-	bestCluster, err := h.decisionEngine.SelectBestCluster(
-		ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority,
+	// Run decision engine synchronously to get top 10 candidates
+	bestClusters, err := h.decisionEngine.RankClusters(
+		ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 10,
 	)
 	if err != nil {
 		logger.Info("No suitable cluster found for evaluation",
@@ -76,8 +76,13 @@ func (h *Handler) PostEvaluation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var candidates []string
+	for _, cluster := range bestClusters {
+		candidates = append(candidates, cluster.Spec.ClusterID)
+	}
+
 	response := dto.EvaluationResponseDTO{
-		TargetClusterID: bestCluster.Spec.ClusterID,
+		CandidateClusters: candidates,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

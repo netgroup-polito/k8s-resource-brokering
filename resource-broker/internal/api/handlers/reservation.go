@@ -73,18 +73,44 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Run decision engine synchronously
-	bestCluster, err := h.decisionEngine.SelectBestCluster(
-		ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority,
-	)
-	if err != nil {
-		logger.Error(err, "No suitable cluster found",
-			"requesterID", requesterID,
-			"requestedCPU", requestedCPU.String(),
-			"requestedMemory", requestedMemory.String())
-		respondWithError(w, http.StatusConflict,
-			fmt.Sprintf("No suitable cluster found: %v", err))
-		return
+	var bestCluster *brokerv1alpha1.ClusterAdvertisement
+
+	if reqDTO.TargetClusterID != "" {
+		// Specific cluster requested
+		clusterAdvList := &brokerv1alpha1.ClusterAdvertisementList{}
+		if err := h.k8sClient.List(ctx, clusterAdvList); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to list cluster advertisements")
+			return
+		}
+
+		for i := range clusterAdvList.Items {
+			if clusterAdvList.Items[i].Spec.ClusterID == reqDTO.TargetClusterID {
+				if clusterAdvList.Items[i].Status.Active {
+					bestCluster = &clusterAdvList.Items[i]
+				}
+				break
+			}
+		}
+
+		if bestCluster == nil {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Target cluster %s not found or inactive", reqDTO.TargetClusterID))
+			return
+		}
+	} else {
+		// Run decision engine synchronously
+		bestClusters, err := h.decisionEngine.RankClusters(
+			ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 1,
+		)
+		if err != nil || len(bestClusters) == 0 {
+			logger.Error(err, "No suitable cluster found",
+				"requesterID", requesterID,
+				"requestedCPU", requestedCPU.String(),
+				"requestedMemory", requestedMemory.String())
+			respondWithError(w, http.StatusConflict,
+				fmt.Sprintf("No suitable cluster found: %v", err))
+			return
+		}
+		bestCluster = bestClusters[0]
 	}
 
 	// Generate reservation name

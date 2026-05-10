@@ -147,16 +147,17 @@ func (r *ReservationReconciler) handlePendingReservation(
 	}
 
 	// Otherwise, select best cluster based on decision engine
-	bestCluster, err := r.DecisionEngine.SelectBestCluster(
+	bestClusters, err := r.DecisionEngine.RankClusters(
 		ctx,
 		reservation.Spec.RequesterID,
 		reservation.Spec.RequestedResources.CPU,
 		reservation.Spec.RequestedResources.Memory,
 		reservation.Spec.RequestedResources.GPU,
 		reservation.Spec.Priority,
+		1,
 	)
 
-	if err != nil {
+	if err != nil || len(bestClusters) == 0 {
 		logger.Error(err, "failed to select cluster",
 			"requesterID", reservation.Spec.RequesterID,
 			"requestedCPU", reservation.Spec.RequestedResources.CPU.String(),
@@ -175,6 +176,7 @@ func (r *ReservationReconciler) handlePendingReservation(
 	}
 
 	// Update reservation with selected cluster
+	bestCluster := bestClusters[0]
 	reservation.Spec.TargetClusterID = bestCluster.Spec.ClusterID
 	if err := r.Update(ctx, reservation); err != nil {
 		logger.Error(err, "Failed to update reservation with target cluster")
