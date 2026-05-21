@@ -28,6 +28,7 @@ type ReservationRequestDTO struct {
 	Priority           int32                 `json:"priority,omitempty"`
 	Duration           string                `json:"duration,omitempty"` // e.g., "1h", "30m"
 	TargetClusterID    string                `json:"targetClusterID,omitempty"` // Optional specific cluster
+	Location           *LocationDTO          `json:"location,omitempty"`
 }
 
 // EvaluationResponseDTO is returned when evaluating a request without reserving

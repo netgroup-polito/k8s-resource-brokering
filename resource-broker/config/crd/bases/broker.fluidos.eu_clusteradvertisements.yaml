@@ -60,13 +60,12 @@ spec:
             description: ClusterAdvertisementSpec defines the desired state of ClusterAdvertisement
             properties:
               clusterID:
-                description: ClusterID is the unique identifier of the source cluster
                 type: string
               clusterName:
-                description: ClusterName is a human-readable name for the cluster
+                description: omitempty =
                 type: string
               cost:
-                description: Cost information (optional)
+                description: CostInfo represents cost information
                 properties:
                   cpuCost:
                     description: CPUCost per core per hour
@@ -89,8 +88,29 @@ spec:
               endpointURL:
                 description: EndpointURL is the API endpoint of the source cluster
                 type: string
+              location:
+                description: LocationInfo represents geographic location information
+                properties:
+                  city:
+                    type: string
+                  continentCode:
+                    type: string
+                  countryCode:
+                    type: string
+                  isp:
+                    type: string
+                  lat:
+                    type: number
+                  lon:
+                    type: number
+                  region:
+                    type: string
+                  regionName:
+                    type: string
+                type: object
               resources:
-                description: Resources available in the cluster
+                description: ResourceMetrics represents available resources with detailed
+                  breakdown
                 properties:
                   allocatable:
                     description: Allocatable - Capacity minus system reservations
@@ -99,14 +119,15 @@ spec:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: CPU in cores
+                        description: CPU in cores [resource is a package of k8s.io/apimachinery/pkg/api/resource,
+                          used to reppresent CPU, memory,.. as quantity]
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       gpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: GPU (optional)
+                        description: GPU
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memory:
@@ -134,14 +155,15 @@ spec:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: CPU in cores
+                        description: CPU in cores [resource is a package of k8s.io/apimachinery/pkg/api/resource,
+                          used to reppresent CPU, memory,.. as quantity]
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       gpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: GPU (optional)
+                        description: GPU
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memory:
@@ -163,21 +185,21 @@ spec:
                     - memory
                     type: object
                   available:
-                    description: Available - Allocatable minus Allocated (what's still
-                      schedulable)
+                    description: Available - Allocatable minus Allocated
                     properties:
                       cpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: CPU in cores
+                        description: CPU in cores [resource is a package of k8s.io/apimachinery/pkg/api/resource,
+                          used to reppresent CPU, memory,.. as quantity]
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       gpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: GPU (optional)
+                        description: GPU
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memory:
@@ -205,14 +227,15 @@ spec:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: CPU in cores
+                        description: CPU in cores [resource is a package of k8s.io/apimachinery/pkg/api/resource,
+                          used to reppresent CPU, memory,.. as quantity]
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       gpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: GPU (optional)
+                        description: GPU
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memory:
@@ -234,20 +257,21 @@ spec:
                     - memory
                     type: object
                   reserved:
-                    description: Reserved - Resources locked by reservations (NEW!)
+                    description: Reserved - Resources locked by reservations
                     properties:
                       cpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: CPU in cores
+                        description: CPU in cores [resource is a package of k8s.io/apimachinery/pkg/api/resource,
+                          used to reppresent CPU, memory,.. as quantity]
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       gpu:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: GPU (optional)
+                        description: GPU
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       memory:

@@ -64,27 +64,25 @@ spec:
                 format: int32
                 type: integer
               requestedResources:
-                description: RequestedResources are the resources being requested
+                description: RequestedResourceQuantities represents requested resource
+                  amounts
                 properties:
                   cpu:
                     anyOf:
                     - type: integer
                     - type: string
-                    description: CPU cores requested
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   gpu:
                     anyOf:
                     - type: integer
                     - type: string
-                    description: GPU requested (optional)
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   memory:
                     anyOf:
                     - type: integer
                     - type: string
-                    description: Memory requested
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   storage:
@@ -102,9 +100,8 @@ spec:
                 description: RequesterID identifies who is requesting the reservation
                 type: string
               targetClusterID:
-                description: |-
-                  TargetClusterID is the cluster where resources should be reserved
-                  If not specified, the broker will automatically select the best cluster
+                description: If not specified, the broker will automatically select
+                  the best cluster
                 type: string
             required:
             - requestedResources
@@ -171,27 +168,22 @@ spec:
                   type: object
                 type: array
               expiresAt:
-                description: ExpiresAt is when the reservation expires
                 format: date-time
                 type: string
               lastUpdateTime:
-                description: LastUpdateTime
                 format: date-time
                 type: string
               message:
-                description: Message provides additional information about the status
                 type: string
               peeringKubeconfig:
                 description: PeeringKubeconfig contains the restricted credentials
                   for the requester
                 type: string
               phase:
-                description: |-
-                  Phase represents the current state of the reservation
-                  Possible values: Pending, Reserved, Active, Failed, Released
+                description: 'Possible values: Pending, Reserved, Active, Failed,
+                  Released'
                 type: string
               reservedAt:
-                description: ReservedAt is when the reservation was confirmed
                 format: date-time
                 type: string
             type: object

@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	rearv1alpha1 "github.com/mehdiazizian/liqo-resource-agent/api/v1alpha1"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/geo"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport/dto"
 )
@@ -28,6 +29,9 @@ type ResourceRequestReconciler struct {
 	Scheme               *runtime.Scheme
 	BrokerCommunicator   transport.BrokerCommunicator
 	InstructionNamespace string
+	MockGeoURL           string
+	ClusterID            string
+	ForcedGeoIP          string
 }
 
 // +kubebuilder:rbac:groups=rear.fluidos.eu,resources=resourcerequests,verbs=get;list;watch;create;update;patch;delete
@@ -59,6 +63,13 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				},
 				Priority: resourceReq.Spec.Priority,
 				Duration: resourceReq.Spec.Duration,
+			}
+
+			loc, err := geo.GetLocation(r.MockGeoURL, r.ClusterID, r.ForcedGeoIP)
+			if err != nil {
+				logger.Error(err, "Failed to get geo location")
+			} else if loc != nil {
+				evalReq.Location = loc
 			}
 
 			evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
@@ -124,6 +135,13 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		},
 		Priority: resourceReq.Spec.Priority,
 		Duration: resourceReq.Spec.Duration,
+	}
+
+	loc, err := geo.GetLocation(r.MockGeoURL, r.ClusterID, r.ForcedGeoIP)
+	if err != nil {
+		logger.Error(err, "Failed to get geo location")
+	} else if loc != nil {
+		evalReq.Location = loc
 	}
 
 	evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)

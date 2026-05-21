@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"time"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -13,7 +15,7 @@ func ToAdvertisementDTO(adv *rearv1alpha1.Advertisement) *AdvertisementDTO {
 	dto := &AdvertisementDTO{
 		ClusterID:   adv.Spec.ClusterID,
 		ClusterName: adv.Name,
-		Timestamp:   adv.Spec.Timestamp.Time,
+		Timestamp:   time.Now(), // Always send fresh timestamp to broker
 		Resources: ResourceMetricsDTO{
 			Capacity:    toResourceQuantitiesDTO(adv.Spec.Resources.Capacity),
 			Allocatable: toResourceQuantitiesDTO(adv.Spec.Resources.Allocatable),

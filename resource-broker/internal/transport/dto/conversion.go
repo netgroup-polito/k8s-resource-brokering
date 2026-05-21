@@ -56,6 +56,19 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 		}
 	}
 
+	if dto.Location != nil {
+		clusterAdv.Spec.Location = &brokerv1alpha1.LocationInfo{
+			ContinentCode: dto.Location.ContinentCode,
+			CountryCode:   dto.Location.CountryCode,
+			Region:        dto.Location.Region,
+			RegionName:    dto.Location.RegionName,
+			City:          dto.Location.City,
+			Lat:           dto.Location.Lat,
+			Lon:           dto.Location.Lon,
+			ISP:           dto.Location.ISP,
+		}
+	}
+
 	// CRITICAL: Preserve Reserved field from DTO if present (broker-managed)
 	if dto.Resources.Reserved != nil {
 		reserved, err := fromResourceQuantitiesDTO(*dto.Resources.Reserved)
@@ -86,6 +99,19 @@ func FromClusterAdvertisement(clusterAdv *brokerv1alpha1.ClusterAdvertisement) *
 		dto.Cost = &CostInfoDTO{
 			Renewable:  clusterAdv.Spec.Cost.Renewable,
 			EnergyCost: clusterAdv.Spec.Cost.EnergyCost,
+		}
+	}
+
+	if clusterAdv.Spec.Location != nil {
+		dto.Location = &LocationDTO{
+			ContinentCode: clusterAdv.Spec.Location.ContinentCode,
+			CountryCode:   clusterAdv.Spec.Location.CountryCode,
+			Region:        clusterAdv.Spec.Location.Region,
+			RegionName:    clusterAdv.Spec.Location.RegionName,
+			City:          clusterAdv.Spec.Location.City,
+			Lat:           clusterAdv.Spec.Location.Lat,
+			Lon:           clusterAdv.Spec.Location.Lon,
+			ISP:           clusterAdv.Spec.Location.ISP,
 		}
 	}
 

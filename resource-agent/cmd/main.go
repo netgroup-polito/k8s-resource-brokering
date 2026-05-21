@@ -94,6 +94,8 @@ func main() {
 	var sharingFixedCPU string
 	var sharingFixedMemory string
 	var sharingFixedGPU string
+	var mockGeoURL string // URL for mock-geo service
+	var advertisedIP string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -132,6 +134,8 @@ func main() {
 	flag.StringVar(&sharingFixedCPU, "sharing-fixed-cpu", "", "Fixed amount of CPU to share (if sharing-logic=fixed)")
 	flag.StringVar(&sharingFixedMemory, "sharing-fixed-memory", "", "Fixed amount of Memory to share (if sharing-logic=fixed)")
 	flag.StringVar(&sharingFixedGPU, "sharing-fixed-gpu", "", "Fixed amount of GPU to share (if sharing-logic=fixed)")
+	flag.StringVar(&mockGeoURL, "mock-geo-url", "", "URL of the mock-geo service (e.g. http://mock-geo:8080)")
+	flag.StringVar(&advertisedIP, "advertised-ip", "", "Optional forced IP to use for geolocation")
 
 	opts := zap.Options{
 		Development: true,
@@ -360,6 +364,8 @@ func main() {
 			},
 			Renewable:  renewable,
 			EnergyCost: energyCost,
+			MockGeoURL: mockGeoURL,
+			ForcedGeoIP: advertisedIP,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "Advertisement")
 			os.Exit(1)
@@ -411,6 +417,9 @@ func main() {
 			Scheme:               mgr.GetScheme(),
 			BrokerCommunicator:   brokerCommunicator,
 			InstructionNamespace: instructionNamespace,
+			MockGeoURL:           mockGeoURL,
+			ClusterID:            clusterID,
+			ForcedGeoIP:          advertisedIP,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ResourceRequest")
 			os.Exit(1)

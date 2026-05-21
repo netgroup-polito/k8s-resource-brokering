@@ -22,20 +22,21 @@ var (
 	brokerContext = "kind-broker-cluster"
 	agent1Context = "kind-agent-cluster-1"
 	agent2Context = "kind-agent-cluster-2"
+	agent3Context = "kind-agent-cluster-3"
 )
 
-//GO: testing.T è un struct che fornisce metodi per segnalare errori e log durante l'esecuzione dei test. Viene passato come argomento alla funzione di test e permette di utilizzare metodi come t.Log, t.Errorf, t.Fatalf, ecc. per registrare informazioni e gestire errori nei test.
+// GO: testing.T è un struct che fornisce metodi per segnalare errori e log durante l'esecuzione dei test. Viene passato come argomento alla funzione di test e permette di utilizzare metodi come t.Log, t.Errorf, t.Fatalf, ecc. per registrare informazioni e gestire errori nei test.
 func TestReservationFlow(t *testing.T) {
-	
-	//GO: ctx è un contesto che può essere usato per gestire scadenze, cancellazioni e passaggio di valori tra le chiamate API. 
+
+	//GO: ctx è un contesto che può essere usato per gestire scadenze, cancellazioni e passaggio di valori tra le chiamate API.
 	//In questo caso viene creato un contesto di base che può essere passato ai client Kubernetes per eseguire operazioni sui cluster.
 	//Non ha scadenza o cancellazione associata, ma è il context radice da cui possono derivare altri contesti più specifici se necessario.
 	ctx := context.Background()
 
 	// 1. Setup Clients
-	s := runtime.NewScheme() //GO: runtime.NewScheme() crea un nuovo schema vuoto che può essere usato per registrare i tipi di risorse Kubernetes che il client può gestire.
-	_ = corev1.AddToScheme(s) //GO: corev1.AddToScheme(s) registra i tipi di risorse corev1 (come Pod, Node, Secret, ecc.) nello schema s.
-	_ = rearv1alpha1.AddToScheme(s) //GO: rearv1alpha1.AddToScheme(s) registra i tipi di risorse personalizzate rearv1alpha1 (come ResourceRequest, ReservationInstruction, ProviderInstruction, ecc.) nello schema s.
+	s := runtime.NewScheme()          //GO: runtime.NewScheme() crea un nuovo schema vuoto che può essere usato per registrare i tipi di risorse Kubernetes che il client può gestire.
+	_ = corev1.AddToScheme(s)         //GO: corev1.AddToScheme(s) registra i tipi di risorse corev1 (come Pod, Node, Secret, ecc.) nello schema s.
+	_ = rearv1alpha1.AddToScheme(s)   //GO: rearv1alpha1.AddToScheme(s) registra i tipi di risorse personalizzate rearv1alpha1 (come ResourceRequest, ReservationInstruction, ProviderInstruction, ecc.) nello schema s.
 	_ = brokerv1alpha1.AddToScheme(s) //GO: brokerv1alpha1.AddToScheme(s) registra i tipi di risorse personalizzate brokerv1alpha1 (come ClusterAdvertisement, ecc.) nello schema s.
 
 	brokerClient, err := getClient(brokerContext, s)
@@ -53,6 +54,11 @@ func TestReservationFlow(t *testing.T) {
 		t.Fatalf("failed to create agent2 client: %v", err)
 	}
 
+	agent3Client, err := getClient(agent3Context, s)
+	if err != nil {
+		t.Fatalf("failed to create agent3 client: %v", err)
+	}
+
 	// 2. Check Broker State (ClusterAdvertisements)
 	t.Log("Checking if agents are registered on broker...")
 	err = retry(12, 5*time.Second, func() error {
@@ -60,8 +66,8 @@ func TestReservationFlow(t *testing.T) {
 		if err := brokerClient.List(ctx, advList); err != nil {
 			return err
 		}
-		if len(advList.Items) < 1 {
-			return fmt.Errorf("waiting for 1 provider agent, found %d", len(advList.Items))
+		if len(advList.Items) < 2 {
+			return fmt.Errorf("waiting for 2 provider agents, found %d", len(advList.Items))
 		}
 		return nil
 	})
@@ -73,7 +79,7 @@ func TestReservationFlow(t *testing.T) {
 	// 3. Create ResourceRequest on Agent 1
 	requestName := fmt.Sprintf("test-request-%d", time.Now().Unix())
 	t.Logf("Creating ResourceRequest %s on agent-cluster-1...", requestName)
-	
+
 	resRequest := &rearv1alpha1.ResourceRequest{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "rear.fluidos.eu/v1alpha1",
@@ -129,15 +135,19 @@ func TestReservationFlow(t *testing.T) {
 	}
 
 	// 6. Verify ProviderInstruction on Provider
-	if targetClusterID == "agent-cluster-2" {
-		t.Log("Verifying ProviderInstruction on agent-cluster-2...")
+	if targetClusterID == "agent-cluster-2" || targetClusterID == "agent-cluster-3" {
+		t.Logf("Verifying ProviderInstruction on %s...", targetClusterID)
+		targetClient := agent2Client
+		if targetClusterID == "agent-cluster-3" {
+			targetClient = agent3Client
+		}
 		err = retry(6, 2*time.Second, func() error {
 			piList := &rearv1alpha1.ProviderInstructionList{}
-			if err := agent2Client.List(ctx, piList); err != nil {
+			if err := targetClient.List(ctx, piList); err != nil {
 				return err
 			}
 			if len(piList.Items) == 0 {
-				return fmt.Errorf("no ProviderInstructions found on agent-cluster-2")
+				return fmt.Errorf("no ProviderInstructions found on %s", targetClusterID)
 			}
 			return nil
 		})
@@ -149,8 +159,8 @@ func TestReservationFlow(t *testing.T) {
 	}
 
 	// 7. Verify Liqo Peering (Virtual Node)
-	t.Log("Verifying Liqo peering (waiting up to 5 minutes for virtual node)...")
-	err = retry(60, 5*time.Second, func() error {
+	t.Log("Verifying Liqo peering (waiting up to 20 minutes for virtual node)...")
+	err = retry(240, 5*time.Second, func() error {
 		nodeList := &corev1.NodeList{}
 		if err := agent1Client.List(ctx, nodeList); err != nil {
 			return err
@@ -176,8 +186,8 @@ func TestReservationFlow(t *testing.T) {
 
 // getClient creates a Kubernetes client for the given context and scheme.
 func getClient(context string, s *runtime.Scheme) (client.Client, error) {
-	//GO: runtime.schema è un oggetto che tiene traccia dei tipi di risorse Kubernetes che il client può gestire. 
-	// Viene usato per serializzare e deserializzare le risorse quando si interagisce con l'API server. 
+	//GO: runtime.schema è un oggetto che tiene traccia dei tipi di risorse Kubernetes che il client può gestire.
+	// Viene usato per serializzare e deserializzare le risorse quando si interagisce con l'API server.
 	//In questo caso, viene creato un nuovo schema vuoto e vengono aggiunti i tipi corev1 (nodi, pod, ecc.) e i tipi personalizzati rearv1alpha1 e brokerv1alpha1.
 
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(

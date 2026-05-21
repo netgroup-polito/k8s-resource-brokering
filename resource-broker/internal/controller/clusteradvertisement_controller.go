@@ -29,7 +29,6 @@ import (
 
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/broker"
-	"github.com/mehdiazizian/liqo-resource-broker/internal/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -69,8 +68,18 @@ func (r *ClusterAdvertisementReconciler) Reconcile(ctx context.Context, req ctrl
 			return err
 		}
 
-		// Recalculate Available using single source of truth
-		resource.UpdateAvailableResources(&latest.Spec.Resources)
+		// Save old available
+		oldCPU := latest.Spec.Resources.Available.CPU.DeepCopy()
+		oldMem := latest.Spec.Resources.Available.Memory.DeepCopy()
+
+		// Do NOT recalculate Available using single source of truth, it overrides Agent's sharing logic!
+		// resource.UpdateAvailableResources(&latest.Spec.Resources)
+
+		// Only update the spec if the recalculated available resources differ
+		if oldCPU.Cmp(latest.Spec.Resources.Available.CPU) == 0 &&
+			oldMem.Cmp(latest.Spec.Resources.Available.Memory) == 0 {
+			return nil
+		}
 
 		// Update the spec with recalculated available
 		return r.Update(ctx, latest)

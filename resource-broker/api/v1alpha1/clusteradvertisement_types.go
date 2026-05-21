@@ -28,6 +28,7 @@ type ClusterAdvertisementSpec struct {
 	ClusterName string          `json:"clusterName,omitempty"` //omit empty allows to not include in JSON if empty
 	Resources   ResourceMetrics `json:"resources"`
 	Cost *CostInfo `json:"cost,omitempty"`
+	Location *LocationInfo `json:"location,omitempty"`
 
 	// Timestamp when this advertisement was received
 	Timestamp metav1.Time `json:"timestamp"`
@@ -85,6 +86,18 @@ type CostInfo struct {
 
 	// EnergyCost is the cost of energy (0-1 normalization recommended)
 	EnergyCost float64 `json:"energyCost,omitempty"`
+}
+
+// LocationInfo represents geographic location information
+type LocationInfo struct {
+	ContinentCode string  `json:"continentCode,omitempty"`
+	CountryCode   string  `json:"countryCode,omitempty"`
+	Region        string  `json:"region,omitempty"`
+	RegionName    string  `json:"regionName,omitempty"`
+	City          string  `json:"city,omitempty"`
+	Lat           float64 `json:"lat,omitempty"`
+	Lon           float64 `json:"lon,omitempty"`
+	ISP           string  `json:"isp,omitempty"`
 }
 
 // ClusterAdvertisementStatus defines the observed state of ClusterAdvertisement

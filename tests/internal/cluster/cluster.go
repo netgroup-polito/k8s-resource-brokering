@@ -11,6 +11,7 @@ const (
 	BrokerCluster = "broker-cluster"
 	Agent1Cluster = "agent-cluster-1"
 	Agent2Cluster = "agent-cluster-2"
+	Agent3Cluster = "agent-cluster-3"
 )
 
 // CreateClusters creates the required kind clusters if they don't exist.
@@ -20,7 +21,7 @@ const (
 */
 func CreateClusters() error {
 	//GO: con []string viene definito un array di stringhe (i nomi dei cluster)
-	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster}
+	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster, Agent3Cluster}
 
 	//GO: creiamo due variabili che prendono come valori il risultato della funzione getKindClusters() e un eventuale errore
 	existingClusters, err := getKindClusters()
@@ -102,8 +103,8 @@ func ExportKubeconfigs(destDir string) error {
 		return fmt.Errorf("failed to create kubeconfigs directory: %w", err)
 	}
 
-	//Agent1Cluster and Agent2Cluster are two constants defined at lines 12-13
-	clusters := []string{Agent1Cluster, Agent2Cluster}
+	//Agent1Cluster, Agent2Cluster and Agent3Cluster are constants defined at lines 12-14
+	clusters := []string{Agent1Cluster, Agent2Cluster, Agent3Cluster}
 	for _, name := range clusters {
 		// 1. Export External Kubeconfig (for host tools like liqoctl install)
 		fmt.Printf("Exporting kubeconfig for %s...\n", name)
@@ -136,7 +137,7 @@ func ExportKubeconfigs(destDir string) error {
 
 // PatchCoreDNS updates the CoreDNS configmap in all clusters to resolve other cluster's control-plane hostnames to their Docker IPs.
 func PatchCoreDNS() error {
-	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster}
+	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster, Agent3Cluster}
 	hostsBlock := "        hosts {\n"
 	
 	for _, name := range clusters {
@@ -189,7 +190,7 @@ func InstallLiqo(kubeconfigsDir string) error {
 		return nil
 	}
 
-	clusters := []string{Agent1Cluster, Agent2Cluster}
+	clusters := []string{Agent1Cluster, Agent2Cluster, Agent3Cluster}
 	for _, name := range clusters {
 		fmt.Printf("Installing Liqo on %s...\n", name)
 		kubeconfigPath := fmt.Sprintf("%s/%s.kubeconfig", kubeconfigsDir, name)
@@ -208,7 +209,7 @@ func InstallLiqo(kubeconfigsDir string) error {
 
 // Cleanup deletes all test kind clusters.
 func Cleanup() error {
-	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster}
+	clusters := []string{BrokerCluster, Agent1Cluster, Agent2Cluster, Agent3Cluster}
 	for _, name := range clusters {
 		fmt.Printf("Deleting cluster %s...\n", name)
 		_ = exec.Command("kind", "delete", "cluster", "--name", name).Run()

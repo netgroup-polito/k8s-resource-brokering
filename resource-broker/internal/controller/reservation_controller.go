@@ -295,6 +295,13 @@ func (r *ReservationReconciler) handleReservedReservation(
 
 	if reservationHasCondition(reservation, brokerv1alpha1.ReservationConditionRequesterActive) {
 		logger.Info("Requester confirmed activation, promoting reservation to Active")
+
+		// CRITICAL: Release resources from the Broker's tracking once the Agent enforces them!
+		// The Agent's heartbeat will implicitly account for the usage via its normal metrics reporting.
+		if err := r.releaseResources(ctx, reservation, logger); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		reservation.Status.Phase = brokerv1alpha1.ReservationPhaseActive
 		reservation.Status.Message = "Requester confirmed activation"
 		reservation.Status.LastUpdateTime = metav1.Now()
@@ -378,9 +385,8 @@ func (r *ReservationReconciler) releaseResources(
 	reservation *brokerv1alpha1.Reservation,
 	logger logr.Logger,
 ) error {
-	// Only release if reservation was actually reserved
-	if reservation.Status.Phase != brokerv1alpha1.ReservationPhaseReserved &&
-		reservation.Status.Phase != brokerv1alpha1.ReservationPhaseActive {
+	// Only release if reservation is in Reserved phase (since Active reservations already released their tracking)
+	if reservation.Status.Phase != brokerv1alpha1.ReservationPhaseReserved {
 		return nil
 	}
 

@@ -39,7 +39,7 @@ func SetupCertManager() error {
 		fmt.Println("Waiting for cert-manager to be ready...")
 		deployments := []string{"cert-manager", "cert-manager-webhook", "cert-manager-cainjector"}
 		for _, dep := range deployments {
-			cmd = exec.Command("kubectl", "wait", "--for=condition=Available", "deployment/"+dep, "-n", "cert-manager", "--timeout=120s")
+			cmd = exec.Command("kubectl", "wait", "--for=condition=Available", "deployment/"+dep, "-n", "cert-manager", "--timeout=300s")
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to wait for deployment %s: %w", dep, err)
 			}
@@ -161,6 +161,28 @@ spec:
     size: 2048
   issuerRef:
     name: liqo-ca-issuer
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agent-3-cert
+  namespace: default
+spec:
+  secretName: agent-3-tls
+  duration: 8760h
+  renewBefore: 720h
+  commonName: agent-cluster-3
+  subject:
+    organizations:
+      - LiqoResourceAgent
+  usages:
+    - client auth
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: liqo-ca-issuer
     kind: ClusterIssuer`
 
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
@@ -175,7 +197,7 @@ spec:
 	// Wait some time for the CA to be ready first
 	time.Sleep(5 * time.Second)
 	
-	certs := []string{"liqo-ca", "broker-server-cert", "agent-1-cert", "agent-2-cert"}
+	certs := []string{"liqo-ca", "broker-server-cert", "agent-1-cert", "agent-2-cert", "agent-3-cert"}
 	for _, cert := range certs {
 		ns := "default"
 		if cert == "liqo-ca" {
@@ -214,6 +236,11 @@ func TransferCertificates() error {
 		return err
 	}
 
+	agent3Secret, err := getSecret("agent-3-tls", "default")
+	if err != nil {
+		return err
+	}
+
 	// 2. Apply secrets to agent clusters
 	if err := applySecretToCluster(cluster.Agent1Cluster, "ca-secret", "default", caSecret); err != nil {
 		return err
@@ -226,6 +253,13 @@ func TransferCertificates() error {
 		return err
 	}
 	if err := applySecretToCluster(cluster.Agent2Cluster, "agent-tls", "default", agent2Secret); err != nil {
+		return err
+	}
+
+	if err := applySecretToCluster(cluster.Agent3Cluster, "ca-secret", "default", caSecret); err != nil {
+		return err
+	}
+	if err := applySecretToCluster(cluster.Agent3Cluster, "agent-tls", "default", agent3Secret); err != nil {
 		return err
 	}
 

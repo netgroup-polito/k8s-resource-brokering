@@ -20,6 +20,7 @@ func BuildAndLoadImages(rootDir string) error {
 	}{
 		{"resource-broker", filepath.Join(rootDir, "resource-broker")},
 		{"resource-agent", filepath.Join(rootDir, "resource-agent")},
+		{"mock-geo", filepath.Join(rootDir, "mock-geo")},
 	}
 	for _, comp := range components {
 		if comp.name == "resource-agent" {
@@ -38,7 +39,14 @@ func BuildAndLoadImages(rootDir string) error {
 		}
 
 		fmt.Printf("Loading image %s into clusters...\n", comp.name)
-		clusters := []string{cluster.BrokerCluster, cluster.Agent1Cluster, cluster.Agent2Cluster}
+		var clusters []string
+		if comp.name == "resource-broker" || comp.name == "mock-geo" {
+			clusters = []string{cluster.BrokerCluster}
+		} else if comp.name == "resource-agent" {
+			clusters = []string{cluster.Agent1Cluster, cluster.Agent2Cluster, cluster.Agent3Cluster}
+		} else {
+			clusters = []string{cluster.BrokerCluster, cluster.Agent1Cluster, cluster.Agent2Cluster, cluster.Agent3Cluster}
+		}
 		for _, cls := range clusters {
 			cmd = exec.Command("kind", "load", "docker-image", comp.name+":latest", "--name", cls)
 			if err := cmd.Run(); err != nil {
@@ -67,13 +75,23 @@ func DeployBroker(rootDir string) error {
 
 	//builds the path to the broker manifest file.
 	manifestPath := filepath.Join(rootDir, "resource-broker", "deploy", "manifests.yaml")
-	
+
 	//GO: viene creato un comando "kubectl apply -f <manifestPath>" che applica il manifest del broker al cluster. L'output e l'errore del comando vengono indirizzati a stdout e stderr.
 	cmd = exec.Command("kubectl", "apply", "-f", manifestPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return err
+	}
+
+	// Deploy mock-geo
+	fmt.Println("Deploying mock-geo...")
+	mockGeoManifestPath := filepath.Join(rootDir, "mock-geo", "deploy", "manifests.yaml")
+	cmd = exec.Command("kubectl", "apply", "-f", mockGeoManifestPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy mock-geo: %w", err)
 	}
 
 	// Restart deployment to ensure new image is used
@@ -97,19 +115,25 @@ func switchContext(context string) error {
 
 // DeployAgents deploys the agents to their respective clusters.
 func DeployAgents(rootDir string, kubeconfigsDir string) error {
-	
+
 	//GO: vedi linea 16
 	agents := []struct {
-		clusterName        string
-		id                 string
-		renewable          string
-		cost               string
-		role               string
-		sharingLogic       string
-		sharingPercentage  string
+		clusterName       string
+		id                string
+		renewable         string
+		cost              string
+		role              string
+		sharingLogic      string
+		sharingPercentage string
+		mockGeoURL        string
+		advertisedIP      string
 	}{
-		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100"},
-		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80"},
+		// Requester (e.g. simulated in US)
+		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100", "http://broker-cluster-control-plane:30080", "37.3382.121.88"},
+		// Provider 1 (e.g. simulated in Italy)
+		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80", "http://broker-cluster-control-plane:30080", "9.1900.45.46"},
+		// Provider 2 (e.g. simulated in Germany)
+		{cluster.Agent3Cluster, "agent-cluster-3", "true", "0.3", "provider", "all", "100", "http://broker-cluster-control-plane:30080", "8.6821.50.11"},
 	}
 
 	for _, agent := range agents {
@@ -148,6 +172,10 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"all\"", "value: \""+agent.sharingLogic+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"100\"", "value: \""+agent.sharingPercentage+"\"")
 
+		// Map mock-geo URL and IP
+		modifiedContent = strings.ReplaceAll(modifiedContent, "name: MOCK_GEO_URL\n          value: \"\"", "name: MOCK_GEO_URL\n          value: \""+agent.mockGeoURL+"\"")
+		modifiedContent = strings.ReplaceAll(modifiedContent, "name: ADVERTISED_IP\n          value: \"\"", "name: ADVERTISED_IP\n          value: \""+agent.advertisedIP+"\"")
+
 		cmd = exec.Command("kubectl", "apply", "-f", "-")
 		cmd.Stdin = strings.NewReader(modifiedContent)
 		cmd.Stdout = os.Stdout
@@ -172,7 +200,7 @@ func createKubeconfigsSecret(kubeconfigsDir string, clusterName string) error {
 	fmt.Println("Creating kubeconfigs secret for", clusterName, "...")
 
 	args := []string{"create", "secret", "generic", "agent-kubeconfigs", "--namespace", "default", "--save-config", "--dry-run=client", "-o", "yaml"}
-	
+
 	kubeconfigFile := filepath.Join(kubeconfigsDir, clusterName+"-internal.kubeconfig")
 	if _, err := os.Stat(kubeconfigFile); os.IsNotExist(err) {
 		return fmt.Errorf("kubeconfig not found for %s: %s", clusterName, kubeconfigFile)
@@ -182,16 +210,16 @@ func createKubeconfigsSecret(kubeconfigsDir string, clusterName string) error {
 
 	// Apply the secret
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
-	
+
 	createCmd := exec.Command("kubectl", args...)
 	output, err := createCmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to create secret dry-run: %w", err)
 	}
-	
+
 	cmd.Stdin = strings.NewReader(string(output)) //GO: il comando "kubectl create secret generic agent-kubeconfigs --namespace default --save-config --dry-run=client -o yaml --from-file=..." viene eseguito e il suo output (che è il manifest YAML del secret) viene passato come input al comando "kubectl apply -f -" per creare o aggiornare il secret nel cluster.
-	cmd.Stdout = os.Stdout //GO: l'output del comando viene indirizzato a stdout
-	cmd.Stderr = os.Stderr //GO: l'errore del comando viene indirizzato a stderr
+	cmd.Stdout = os.Stdout                        //GO: l'output del comando viene indirizzato a stdout
+	cmd.Stderr = os.Stderr                        //GO: l'errore del comando viene indirizzato a stderr
 	return cmd.Run()
 }
 
@@ -207,7 +235,7 @@ func downloadBinaries(agentDir string) error {
 		}
 		v := strings.TrimSpace(string(version))
 		downloadUrl := fmt.Sprintf("https://dl.k8s.io/release/%s/bin/linux/amd64/kubectl", v)
-		
+
 		cmd := exec.Command("curl", "-Lo", kubectlPath, downloadUrl)
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to download kubectl: %w", err)
@@ -219,23 +247,23 @@ func downloadBinaries(agentDir string) error {
 	liqoctlPath := filepath.Join(agentDir, "liqoctl")
 	if _, err := os.Stat(liqoctlPath); os.IsNotExist(err) {
 		fmt.Println("  -> Downloading liqoctl...")
-		
+
 		// Use direct GitHub download as get.liqo.io is failing to resolve
 		tarUrl := "https://github.com/liqotech/liqo/releases/latest/download/liqoctl-linux-amd64.tar.gz"
 		tarPath := filepath.Join(agentDir, "liqoctl.tar.gz")
-		
+
 		// Download tarball
 		dlCmd := exec.Command("curl", "-Lo", tarPath, tarUrl)
 		if err := dlCmd.Run(); err != nil {
 			return fmt.Errorf("failed to download liqoctl tarball: %w", err)
 		}
-		
+
 		// Extract tarball
 		extractCmd := exec.Command("tar", "-xzf", tarPath, "-C", agentDir)
 		if err := extractCmd.Run(); err != nil {
 			return fmt.Errorf("failed to extract liqoctl: %w", err)
 		}
-		
+
 		// Cleanup tarball
 		os.Remove(tarPath)
 		os.Chmod(liqoctlPath, 0755)

@@ -68,18 +68,33 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 
-			// Convert again to have fresh object with new values
+			// Keep a copy of the old reserved field
+			var reserved *brokerv1alpha1.ResourceQuantities
+			if latest.Spec.Resources.Reserved != nil {
+				reserved = latest.Spec.Resources.Reserved
+			}
+
+			// Convert DTO to k8s ClusterAdvertisement
 			clusterAdvRetry, err2 := dto.ToClusterAdvertisement(&incomingAdv, h.namespace)
 			if err2 != nil {
 				return err2
 			}
 
-			if latest.Spec.Resources.Reserved != nil {
-				clusterAdvRetry.Spec.Resources.Reserved = latest.Spec.Resources.Reserved
+			// Apply new spec but preserve the old reserved field
+			latest.Spec = clusterAdvRetry.Spec
+			latest.Spec.Resources.Reserved = reserved
+
+			// CRITICAL: Subtract Reserved from the Agent's reported Available to prevent
+			// over-allocation in the window before the Agent enforces the instruction!
+			if reserved != nil {
+				latest.Spec.Resources.Available.CPU.Sub(reserved.CPU)
+				latest.Spec.Resources.Available.Memory.Sub(reserved.Memory)
+				if reserved.GPU != nil && latest.Spec.Resources.Available.GPU != nil {
+					latest.Spec.Resources.Available.GPU.Sub(*reserved.GPU)
+				}
 			}
 
-			clusterAdvRetry.ResourceVersion = latest.ResourceVersion
-			return h.k8sClient.Update(ctx, clusterAdvRetry)
+			return h.k8sClient.Update(ctx, latest)
 		})
 
 		if err != nil {

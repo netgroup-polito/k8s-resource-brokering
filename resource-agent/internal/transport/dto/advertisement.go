@@ -9,7 +9,20 @@ type AdvertisementDTO struct {
 	ClusterName string             `json:"clusterName"`
 	Resources   ResourceMetricsDTO `json:"resources"`
 	Cost        *CostInfoDTO       `json:"cost,omitempty"`
+	Location    *LocationDTO       `json:"location,omitempty"`
 	Timestamp   time.Time          `json:"timestamp"`
+}
+
+// LocationDTO represents geographic location information
+type LocationDTO struct {
+	ContinentCode string  `json:"continentCode"`
+	CountryCode   string  `json:"countryCode"`
+	Region        string  `json:"region"`
+	RegionName    string  `json:"regionName"`
+	City          string  `json:"city"`
+	Lat           float64 `json:"lat"`
+	Lon           float64 `json:"lon"`
+	ISP           string  `json:"isp"`
 }
 
 // CostInfoDTO represents cost information in a protocol-agnostic way
