@@ -61,8 +61,8 @@ func TestReservationFlow(t *testing.T) {
 
 	// 2. Check Broker State (ClusterAdvertisements)
 	t.Log("Checking if agents are registered on broker...")
+	advList := &brokerv1alpha1.ClusterAdvertisementList{}
 	err = retry(12, 5*time.Second, func() error {
-		advList := &brokerv1alpha1.ClusterAdvertisementList{}
 		if err := brokerClient.List(ctx, advList); err != nil {
 			return err
 		}
@@ -74,7 +74,14 @@ func TestReservationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agents did not register on broker: %v", err)
 	}
-	t.Log("Provider agent registered!")
+	t.Log("Provider agents registered! Advertisements:")
+	for _, adv := range advList.Items {
+		locStr := "N/A"
+		if adv.Spec.Location != nil {
+			locStr = fmt.Sprintf("%+v", *adv.Spec.Location)
+		}
+		t.Logf(" - Cluster: %s, CPU: %s, Mem: %s, Location: %s", adv.Spec.ClusterID, adv.Spec.Resources.Available.CPU.String(), adv.Spec.Resources.Available.Memory.String(), locStr)
+	}
 
 	// 3. Create ResourceRequest on Agent 1
 	requestName := fmt.Sprintf("test-request-%d", time.Now().Unix())

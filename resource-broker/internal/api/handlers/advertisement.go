@@ -104,10 +104,15 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		locStr := "N/A"
+		if incomingAdv.Location != nil {
+			locStr = fmt.Sprintf("%+v", *incomingAdv.Location)
+		}
 		logger.Info("Updated advertisement",
 			"clusterID", incomingAdv.ClusterID,
 			"availableCPU", incomingAdv.Resources.Available.CPU,
-			"availableMemory", incomingAdv.Resources.Available.Memory)
+			"availableMemory", incomingAdv.Resources.Available.Memory,
+			"location", locStr)
 
 	} else if apierrors.IsNotFound(err) {
 		// Advertisement doesn't exist - create new
@@ -118,10 +123,15 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		locStr := "N/A"
+		if incomingAdv.Location != nil {
+			locStr = fmt.Sprintf("%+v", *incomingAdv.Location)
+		}
 		logger.Info("Created new advertisement",
 			"clusterID", incomingAdv.ClusterID,
 			"availableCPU", incomingAdv.Resources.Available.CPU,
-			"availableMemory", incomingAdv.Resources.Available.Memory)
+			"availableMemory", incomingAdv.Resources.Available.Memory,
+			"location", locStr)
 
 	} else {
 		// Unexpected error

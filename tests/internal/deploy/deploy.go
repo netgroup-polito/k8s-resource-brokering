@@ -129,11 +129,11 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		advertisedIP      string
 	}{
 		// Requester (e.g. simulated in US)
-		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100", "http://broker-cluster-control-plane:30080", "37.3382.121.88"},
+		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100", "http://broker-cluster-control-plane:30080", "8.8.1.1"},
 		// Provider 1 (e.g. simulated in Italy)
-		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80", "http://broker-cluster-control-plane:30080", "9.1900.45.46"},
+		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80", "http://broker-cluster-control-plane:30080", "8.8.1.8"},
 		// Provider 2 (e.g. simulated in Germany)
-		{cluster.Agent3Cluster, "agent-cluster-3", "true", "0.3", "provider", "all", "100", "http://broker-cluster-control-plane:30080", "8.6821.50.11"},
+		{cluster.Agent3Cluster, "agent-cluster-3", "true", "0.3", "provider", "all", "100", "http://broker-cluster-control-plane:30080", "8.8.1.6"},
 	}
 
 	for _, agent := range agents {

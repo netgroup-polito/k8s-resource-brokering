@@ -98,6 +98,8 @@ type LocationInfo struct {
 	Lat           float64 `json:"lat,omitempty"`
 	Lon           float64 `json:"lon,omitempty"`
 	ISP           string  `json:"isp,omitempty"`
+	Org           string  `json:"org,omitempty"`
+	AS            string  `json:"as,omitempty"`
 }
 
 // ClusterAdvertisementStatus defines the observed state of ClusterAdvertisement

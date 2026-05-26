@@ -91,6 +91,8 @@ spec:
               location:
                 description: LocationInfo represents geographic location information
                 properties:
+                  as:
+                    type: string
                   city:
                     type: string
                   continentCode:
@@ -103,6 +105,8 @@ spec:
                     type: number
                   lon:
                     type: number
+                  org:
+                    type: string
                   region:
                     type: string
                   regionName:

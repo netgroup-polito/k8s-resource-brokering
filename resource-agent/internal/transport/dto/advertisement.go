@@ -23,6 +23,8 @@ type LocationDTO struct {
 	Lat           float64 `json:"lat"`
 	Lon           float64 `json:"lon"`
 	ISP           string  `json:"isp"`
+	Org           string  `json:"org"`
+	AS            string  `json:"as"`
 }
 
 // CostInfoDTO represents cost information in a protocol-agnostic way

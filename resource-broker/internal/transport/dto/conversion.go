@@ -66,6 +66,8 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 			Lat:           dto.Location.Lat,
 			Lon:           dto.Location.Lon,
 			ISP:           dto.Location.ISP,
+			Org:           dto.Location.Org,
+			AS:            dto.Location.AS,
 		}
 	}
 
@@ -112,6 +114,8 @@ func FromClusterAdvertisement(clusterAdv *brokerv1alpha1.ClusterAdvertisement) *
 			Lat:           clusterAdv.Spec.Location.Lat,
 			Lon:           clusterAdv.Spec.Location.Lon,
 			ISP:           clusterAdv.Spec.Location.ISP,
+			Org:           clusterAdv.Spec.Location.Org,
+			AS:            clusterAdv.Spec.Location.AS,
 		}
 	}
 
