@@ -29,6 +29,9 @@ type AdvertisementSpec struct {
 	// Resources available in this cluster
 	Resources ResourceMetrics `json:"resources"`
 
+	// Policy for cluster ranking
+	Policy string `json:"policy,omitempty"`
+
 	// Cost information
 	Cost *CostInfo `json:"cost,omitempty"`
 

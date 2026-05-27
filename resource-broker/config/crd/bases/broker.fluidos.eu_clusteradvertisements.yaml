@@ -112,6 +112,10 @@ spec:
                   regionName:
                     type: string
                 type: object
+              policy:
+                description: Policy defines the resource selection preference for
+                  this cluster when it acts as a requester
+                type: string
               resources:
                 description: ResourceMetrics represents available resources with detailed
                   breakdown

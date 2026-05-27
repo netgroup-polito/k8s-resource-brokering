@@ -55,6 +55,7 @@ type AdvertisementReconciler struct {
 	EnergyCost           float64       // Normalized cost (0-1)
 	MockGeoURL           string        // URL for the mock-geo service
 	ForcedGeoIP          string        // Optional forced IP for geolocation
+	AgentRole            string        // Role of the agent (requester or provider)
 }
 
 // +kubebuilder:rbac:groups=rear.fluidos.eu,resources=advertisements,verbs=get;list;watch;create;update;patch;delete
@@ -86,11 +87,23 @@ func (r *AdvertisementReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Collect current cluster metrics
-	resourceData, err := r.MetricsCollector.CollectClusterResources(ctx)
-	if err != nil {
-		logger.Error(err, "failed to collect cluster resources")
-		return r.updateStatus(ctx, advertisement, "Error", false, fmt.Sprintf("Failed to collect metrics: %v", err))
+	// Collect current cluster metrics (or zero them if requester)
+	var resourceData *rearv1alpha1.ResourceMetrics
+	if r.AgentRole == "requester" {
+		zeroQuantities := rearv1alpha1.ResourceQuantities{}
+		resourceData = &rearv1alpha1.ResourceMetrics{
+			Capacity:    zeroQuantities,
+			Allocatable: zeroQuantities,
+			Allocated:   zeroQuantities,
+			Available:   zeroQuantities,
+		}
+	} else {
+		var err error
+		resourceData, err = r.MetricsCollector.CollectClusterResources(ctx)
+		if err != nil {
+			logger.Error(err, "failed to collect cluster resources")
+			return r.updateStatus(ctx, advertisement, "Error", false, fmt.Sprintf("Failed to collect metrics: %v", err))
+		}
 	}
 
 	// Get cluster ID

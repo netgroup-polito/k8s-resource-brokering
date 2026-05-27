@@ -3,11 +3,13 @@ package broker
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // DecisionEngine selects the best cluster for resource allocation
@@ -23,6 +25,7 @@ func (d *DecisionEngine) RankClusters(
 	requestedGPU *resource.Quantity,
 	priority int32,
 	maxResults int,
+	policy string,
 ) ([]*brokerv1alpha1.ClusterAdvertisement, error) {
 
 	// List all cluster advertisements
@@ -40,6 +43,19 @@ func (d *DecisionEngine) RankClusters(
 		score   float64
 	}
 	var scoredClusters []ScoredCluster
+
+	var requesterAdv *brokerv1alpha1.ClusterAdvertisement
+	if policy == "latency" {
+		for i := range advList.Items {
+			if advList.Items[i].Spec.ClusterID == requesterID {
+				requesterAdv = &advList.Items[i]
+				break
+			}
+		}
+		if requesterAdv == nil || requesterAdv.Spec.Location == nil {
+			return nil, fmt.Errorf("requester location not found for latency policy")
+		}
+	}
 
 	for i := range advList.Items {
 		cluster := &advList.Items[i]
@@ -59,9 +75,46 @@ func (d *DecisionEngine) RankClusters(
 			continue
 		}
 
-		// Calculate score
-		score := d.calculateScore(cluster, requestedCPU, requestedMemory, requestedGPU, priority)
-		scoredClusters = append(scoredClusters, ScoredCluster{cluster: cluster, score: score})
+		if policy == "latency" && cluster.Spec.Location != nil {
+			// Calculate estimated latency
+			latency := estimatedRTTms(
+				requesterAdv.Spec.Location.Lat, requesterAdv.Spec.Location.Lon,
+				cluster.Spec.Location.Lat, cluster.Spec.Location.Lon,
+			)
+			// Lower latency is better. We negate it so higher score is better for the sorting algorithm
+			// or we just change the sorting logic. Wait, let's keep sorting descending (higher is better)
+			// so score = -latency.
+			score := -latency
+			scoredClusters = append(scoredClusters, ScoredCluster{cluster: cluster, score: score})
+
+			logger := log.FromContext(ctx).WithName("decision-engine")
+			logger.Info("Calculated geographical distance for latency policy",
+				"requester", requesterID,
+				"provider", cluster.Spec.ClusterID,
+				"latency_ms", latency)
+
+			// Create or update NetworkBond
+			// For this walkthrough, we will try to create it in the background
+			go func(reqID, provID string, lat float64) {
+				bond := &brokerv1alpha1.NetworkBond{}
+				bond.Name = fmt.Sprintf("%s-%s", reqID, provID)
+				bond.Namespace = cluster.Namespace // Assuming same namespace
+				bond.Spec.RequesterClusterID = reqID
+				bond.Spec.ProviderClusterID = provID
+				bond.Spec.EstimatedLatency = lat
+
+				// Best effort create or update
+				// Ignoring errors for now in background goroutine to not block ranking
+				if err := d.Client.Create(context.Background(), bond); err == nil {
+					logger.Info("Created NetworkBond CRD for latency tracking", "bond", bond.Name)
+				}
+			}(requesterID, cluster.Spec.ClusterID, latency)
+
+		} else {
+			// Calculate standard score
+			score := d.calculateScore(cluster, requestedCPU, requestedMemory, requestedGPU, priority)
+			scoredClusters = append(scoredClusters, ScoredCluster{cluster: cluster, score: score})
+		}
 	}
 
 	if len(scoredClusters) == 0 {
@@ -104,7 +157,7 @@ func (d *DecisionEngine) hasEnoughResources(
 	availableMemory := cluster.Spec.Resources.Available.Memory
 
 	hasCPUAndMem := availableCPU.Cmp(requestedCPU) >= 0 && availableMemory.Cmp(requestedMemory) >= 0
-	
+
 	if requestedGPU != nil && requestedGPU.Sign() > 0 {
 		if cluster.Spec.Resources.Available.GPU == nil || cluster.Spec.Resources.Available.GPU.Cmp(*requestedGPU) < 0 {
 			return false
@@ -112,6 +165,30 @@ func (d *DecisionEngine) hasEnoughResources(
 	}
 
 	return hasCPUAndMem
+}
+
+func estimatedRTTms(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadiusKm = 6371.0
+	const fiberSpeedKmPerSec = 200000.0
+
+	toRad := func(deg float64) float64 {
+		return deg * math.Pi / 180.0
+	}
+
+	phi1 := toRad(lat1)
+	phi2 := toRad(lat2)
+	dPhi := toRad(lat2 - lat1)
+	dLambda := toRad(lon2 - lon1)
+
+	a := math.Sin(dPhi/2)*math.Sin(dPhi/2) +
+		math.Cos(phi1)*math.Cos(phi2)*
+			math.Sin(dLambda/2)*math.Sin(dLambda/2)
+
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	distanceKm := earthRadiusKm * c
+
+	rttSeconds := 2 * distanceKm / fiberSpeedKmPerSec
+	return rttSeconds * 1000.0
 }
 
 // calculateScore computes a score for the cluster based on availability

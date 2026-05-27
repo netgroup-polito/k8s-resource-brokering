@@ -35,6 +35,9 @@ type ClusterAdvertisementSpec struct {
 
 	// EndpointURL is the API endpoint of the source cluster
 	EndpointURL string `json:"endpointURL,omitempty"`
+
+	// Policy defines the resource selection preference for this cluster when it acts as a requester
+	Policy string `json:"policy,omitempty"`
 }
 
 // ResourceMetrics represents available resources with detailed breakdown

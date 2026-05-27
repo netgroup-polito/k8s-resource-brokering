@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/api/middleware"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/transport/dto"
 )
@@ -63,9 +64,21 @@ func (h *Handler) PostEvaluation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get requester policy
+	policy := ""
+	advList := &brokerv1alpha1.ClusterAdvertisementList{}
+	if err := h.k8sClient.List(ctx, advList); err == nil {
+		for i := range advList.Items {
+			if advList.Items[i].Spec.ClusterID == requesterID {
+				policy = advList.Items[i].Spec.Policy
+				break
+			}
+		}
+	}
+
 	// Run decision engine synchronously to get top 10 candidates
 	bestClusters, err := h.decisionEngine.RankClusters(
-		ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 10,
+		ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 10, policy,
 	)
 	if err != nil {
 		logger.Info("No suitable cluster found for evaluation",

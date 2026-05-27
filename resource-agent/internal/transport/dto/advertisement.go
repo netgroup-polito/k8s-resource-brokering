@@ -10,6 +10,7 @@ type AdvertisementDTO struct {
 	Resources   ResourceMetricsDTO `json:"resources"`
 	Cost        *CostInfoDTO       `json:"cost,omitempty"`
 	Location    *LocationDTO       `json:"location,omitempty"`
+	Policy      string             `json:"policy,omitempty"`
 	Timestamp   time.Time          `json:"timestamp"`
 }
 

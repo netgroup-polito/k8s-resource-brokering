@@ -97,9 +97,21 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		// Get requester policy
+		policy := ""
+		advList := &brokerv1alpha1.ClusterAdvertisementList{}
+		if err := h.k8sClient.List(ctx, advList); err == nil {
+			for i := range advList.Items {
+				if advList.Items[i].Spec.ClusterID == requesterID {
+					policy = advList.Items[i].Spec.Policy
+					break
+				}
+			}
+		}
+
 		// Run decision engine synchronously
 		bestClusters, err := h.decisionEngine.RankClusters(
-			ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 1,
+			ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 1, policy,
 		)
 		if err != nil || len(bestClusters) == 0 {
 			logger.Error(err, "No suitable cluster found",

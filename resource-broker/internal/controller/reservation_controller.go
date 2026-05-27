@@ -146,6 +146,13 @@ func (r *ReservationReconciler) handlePendingReservation(
 		return r.reserveInTargetCluster(ctx, reservation, logger)
 	}
 
+	// Get requester policy
+	policy := ""
+	requesterAdv, errFind := r.findClusterByID(ctx, reservation.Spec.RequesterID)
+	if errFind == nil && requesterAdv != nil {
+		policy = requesterAdv.Spec.Policy
+	}
+
 	// Otherwise, select best cluster based on decision engine
 	bestClusters, err := r.DecisionEngine.RankClusters(
 		ctx,
@@ -155,6 +162,7 @@ func (r *ReservationReconciler) handlePendingReservation(
 		reservation.Spec.RequestedResources.GPU,
 		reservation.Spec.Priority,
 		1,
+		policy,
 	)
 
 	if err != nil || len(bestClusters) == 0 {

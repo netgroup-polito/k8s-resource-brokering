@@ -45,6 +45,7 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 				Available:   available,
 				// Reserved: will be preserved from existing if present
 			},
+			Policy: dto.Policy,
 		},
 	}
 
@@ -95,6 +96,7 @@ func FromClusterAdvertisement(clusterAdv *brokerv1alpha1.ClusterAdvertisement) *
 			Allocated:   toResourceQuantitiesDTO(clusterAdv.Spec.Resources.Allocated),
 			Available:   toResourceQuantitiesDTO(clusterAdv.Spec.Resources.Available),
 		},
+		Policy: clusterAdv.Spec.Policy,
 	}
 
 	if clusterAdv.Spec.Cost != nil {

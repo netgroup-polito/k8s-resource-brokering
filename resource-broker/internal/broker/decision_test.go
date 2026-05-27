@@ -63,6 +63,7 @@ func TestRankClusters_PicksClusterWithMoreResources(t *testing.T) {
 		nil, // requestedGPU
 		0,   // priority
 		1,   // maxResults
+		"",  // policy
 	)
 
 	// Verify: should pick cluster-2 (more headroom = higher score)
@@ -92,6 +93,7 @@ func TestRankClusters_SkipsRequesterOwnCluster(t *testing.T) {
 		nil, // requestedGPU
 		0,
 		1,
+		"",
 	)
 
 	// Verify: must pick cluster-2, not cluster-1
@@ -117,6 +119,7 @@ func TestRankClusters_NoClusterAvailable(t *testing.T) {
 		nil,
 		0,
 		1,
+		"",
 	)
 
 	// Verify: should return error
@@ -129,7 +132,7 @@ func TestRankClusters_NoClusterAvailable(t *testing.T) {
 func TestRankClusters_SkipsInactiveClusters(t *testing.T) {
 	// Setup: cluster-1 is inactive (has more resources), cluster-2 is active
 	cluster1 := makeClusterAdvertisement("cluster-1-adv", "cluster-1", "8000m", "16Gi", "6000m", "12Gi", false) // inactive
-	cluster2 := makeClusterAdvertisement("cluster-2-adv", "cluster-2", "4000m", "8Gi", "2000m", "4Gi", true)   // active
+	cluster2 := makeClusterAdvertisement("cluster-2-adv", "cluster-2", "4000m", "8Gi", "2000m", "4Gi", true)    // active
 
 	fakeClient := createFakeClient(cluster1, cluster2)
 	engine := &DecisionEngine{Client: fakeClient}
@@ -142,6 +145,7 @@ func TestRankClusters_SkipsInactiveClusters(t *testing.T) {
 		nil,
 		0,
 		1,
+		"",
 	)
 
 	// Verify: should pick cluster-2 (active), not cluster-1 (inactive)
@@ -171,6 +175,7 @@ func TestRankClusters_RequestExceedsAllClusters(t *testing.T) {
 		nil,
 		0,
 		1,
+		"",
 	)
 
 	// Verify: should return error
@@ -181,7 +186,9 @@ func TestRankClusters_RequestExceedsAllClusters(t *testing.T) {
 
 // Test: With equal available, cluster with higher available/allocatable ratio wins
 // The scoring algorithm calculates post-reservation utilization as:
-//   utilization = 1.0 - ((available - requested) / allocatable)
+//
+//	utilization = 1.0 - ((available - requested) / allocatable)
+//
 // Lower utilization = higher score
 func TestRankClusters_PrefersHigherAvailableRatio(t *testing.T) {
 	// Setup: both have same available (2000m), but different allocatable
@@ -202,6 +209,7 @@ func TestRankClusters_PrefersHigherAvailableRatio(t *testing.T) {
 		nil,
 		0,
 		1,
+		"",
 	)
 
 	// Verify: should pick cluster-1 (higher available/allocatable ratio = better score)
@@ -218,44 +226,44 @@ func TestHasEnoughResources_ChecksBothCPUAndMemory(t *testing.T) {
 	engine := &DecisionEngine{}
 
 	tests := []struct {
-		name           string
-		availableCPU   string
+		name            string
+		availableCPU    string
 		availableMemory string
-		requestedCPU   string
+		requestedCPU    string
 		requestedMemory string
-		expected       bool
+		expected        bool
 	}{
 		{
-			name:           "enough of both",
-			availableCPU:   "2000m",
+			name:            "enough of both",
+			availableCPU:    "2000m",
 			availableMemory: "4Gi",
-			requestedCPU:   "1000m",
+			requestedCPU:    "1000m",
 			requestedMemory: "2Gi",
-			expected:       true,
+			expected:        true,
 		},
 		{
-			name:           "not enough CPU",
-			availableCPU:   "500m",
+			name:            "not enough CPU",
+			availableCPU:    "500m",
 			availableMemory: "4Gi",
-			requestedCPU:   "1000m",
+			requestedCPU:    "1000m",
 			requestedMemory: "2Gi",
-			expected:       false,
+			expected:        false,
 		},
 		{
-			name:           "not enough memory",
-			availableCPU:   "2000m",
+			name:            "not enough memory",
+			availableCPU:    "2000m",
 			availableMemory: "1Gi",
-			requestedCPU:   "1000m",
+			requestedCPU:    "1000m",
 			requestedMemory: "2Gi",
-			expected:       false,
+			expected:        false,
 		},
 		{
-			name:           "exactly matching",
-			availableCPU:   "1000m",
+			name:            "exactly matching",
+			availableCPU:    "1000m",
 			availableMemory: "2Gi",
-			requestedCPU:   "1000m",
+			requestedCPU:    "1000m",
 			requestedMemory: "2Gi",
-			expected:       true,
+			expected:        true,
 		},
 	}
 

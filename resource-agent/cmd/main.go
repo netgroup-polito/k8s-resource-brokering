@@ -96,6 +96,7 @@ func main() {
 	var sharingFixedGPU string
 	var mockGeoURL string // URL for mock-geo service
 	var advertisedIP string
+	var policy string // Policy for cluster ranking
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -136,6 +137,7 @@ func main() {
 	flag.StringVar(&sharingFixedGPU, "sharing-fixed-gpu", "", "Fixed amount of GPU to share (if sharing-logic=fixed)")
 	flag.StringVar(&mockGeoURL, "mock-geo-url", "", "URL of the mock-geo service (e.g. http://mock-geo:8080)")
 	flag.StringVar(&advertisedIP, "advertised-ip", "", "Optional forced IP to use for geolocation")
+	flag.StringVar(&policy, "policy", "", "Policy for cluster ranking (e.g., 'latency')")
 
 	opts := zap.Options{
 		Development: true,
@@ -260,7 +262,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := ensureAdvertisementExists(ctx, bootstrapClient, advertisementNamespace, advertisementName, clusterID); err != nil {
+	if err := ensureAdvertisementExists(ctx, bootstrapClient, advertisementNamespace, advertisementName, clusterID, policy); err != nil {
 		setupLog.Error(err, "unable to bootstrap advertisement resource",
 			"namespace", advertisementNamespace, "name", advertisementName)
 		os.Exit(1)
@@ -342,35 +344,37 @@ func main() {
 	}
 	setupLog.Info("Agent role configured", "role", agentRole)
 
-	if agentRole == "provider" {
-		if err = (&controller.AdvertisementReconciler{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
-			MetricsCollector: &metrics.Collector{
-				ClusterIDOverride:  clusterID,
-				SharingLogic:       sharingLogic,
-				SharingPercentage:  sharingPercentage,
-				SharingFixedCPU:    sharingFixedCPU,
-				SharingFixedMemory: sharingFixedMemory,
-				SharingFixedGPU:    sharingFixedGPU,
-			},
-			BrokerClient:         brokerClient,         // Legacy Kubernetes transport
-			BrokerCommunicator:   brokerCommunicator,   // New transport abstraction (HTTP)
-			RequeueInterval:      advertisementRequeueInterval,
-			InstructionNamespace: instructionNamespace,  // For provider instructions from response
-			TargetKey: types.NamespacedName{
-				Name:      advertisementName,
-				Namespace: advertisementNamespace,
-			},
-			Renewable:  renewable,
-			EnergyCost: energyCost,
-			MockGeoURL: mockGeoURL,
-			ForcedGeoIP: advertisedIP,
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "Advertisement")
-			os.Exit(1)
-		}
+	// Start AdvertisementReconciler for both providers and requesters
+	if err = (&controller.AdvertisementReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		MetricsCollector: &metrics.Collector{
+			ClusterIDOverride:  clusterID,
+			SharingLogic:       sharingLogic,
+			SharingPercentage:  sharingPercentage,
+			SharingFixedCPU:    sharingFixedCPU,
+			SharingFixedMemory: sharingFixedMemory,
+			SharingFixedGPU:    sharingFixedGPU,
+		},
+		BrokerClient:         brokerClient,         // Legacy Kubernetes transport
+		BrokerCommunicator:   brokerCommunicator,   // New transport abstraction (HTTP)
+		RequeueInterval:      advertisementRequeueInterval,
+		InstructionNamespace: instructionNamespace,  // For provider instructions from response
+		TargetKey: types.NamespacedName{
+			Name:      advertisementName,
+			Namespace: advertisementNamespace,
+		},
+		Renewable:  renewable,
+		EnergyCost: energyCost,
+		MockGeoURL: mockGeoURL,
+		ForcedGeoIP: advertisedIP,
+		AgentRole:   agentRole,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Advertisement")
+		os.Exit(1)
+	}
 
+	if agentRole == "provider" {
 		if err = (&controller.ProviderInstructionReconciler{
 			Client:             mgr.GetClient(),
 			Scheme:             mgr.GetScheme(),
@@ -456,7 +460,7 @@ func main() {
 func ensureAdvertisementExists(
 	ctx context.Context,
 	k8sClient client.Client,
-	namespace, name, clusterID string,
+	namespace, name, clusterID, policy string,
 ) error {
 	adv := &rearv1alpha1.Advertisement{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, adv); err != nil {
@@ -472,6 +476,7 @@ func ensureAdvertisementExists(
 			Spec: rearv1alpha1.AdvertisementSpec{
 				ClusterID: clusterID,
 				Resources: zeroMetrics,
+				Policy:    policy,
 				Timestamp: metav1.Now(),
 			},
 		}

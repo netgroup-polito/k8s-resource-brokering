@@ -55,6 +55,7 @@ spec:
         - --sharing-percentage=$(SHARING_PERCENTAGE)
         - --mock-geo-url=$(MOCK_GEO_URL)
         - --advertised-ip=$(ADVERTISED_IP)
+        - --policy=$(POLICY)
         env:
         - name: CLUSTER_ID
           value: "agent-cluster-1" # To be overridden or templated
@@ -71,6 +72,8 @@ spec:
         - name: MOCK_GEO_URL
           value: ""
         - name: ADVERTISED_IP
+          value: ""
+        - name: POLICY
           value: ""
         ports:
         - containerPort: 8082

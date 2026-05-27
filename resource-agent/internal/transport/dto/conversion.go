@@ -23,6 +23,7 @@ func ToAdvertisementDTO(adv *rearv1alpha1.Advertisement) *AdvertisementDTO {
 			Available:   toResourceQuantitiesDTO(adv.Spec.Resources.Available),
 			// Reserved: nil - will be fetched from broker during publish
 		},
+		Policy: adv.Spec.Policy,
 	}
 
 	if adv.Spec.Cost != nil {

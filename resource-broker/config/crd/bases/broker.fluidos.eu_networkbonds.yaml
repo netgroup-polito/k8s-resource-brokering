@@ -1,0 +1,84 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: networkbonds.broker.fluidos.eu
+spec:
+  group: broker.fluidos.eu
+  names:
+    kind: NetworkBond
+    listKind: NetworkBondList
+    plural: networkbonds
+    singular: networkbond
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.requesterClusterID
+      name: Requester
+      type: string
+    - jsonPath: .spec.providerClusterID
+      name: Provider
+      type: string
+    - jsonPath: .spec.estimatedLatency
+      name: Est-Latency(ms)
+      type: number
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NetworkBond is the Schema for the networkbonds API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NetworkBondSpec defines the desired state of NetworkBond
+            properties:
+              actualLatency:
+                description: ActualLatency is the actual measured RTT latency between
+                  the clusters in milliseconds (reserved for future use)
+                type: number
+              estimatedLatency:
+                description: EstimatedLatency is the estimated RTT latency between
+                  the clusters in milliseconds
+                type: number
+              providerClusterID:
+                description: ProviderClusterID is the ID of the cluster providing
+                  resources
+                type: string
+              requesterClusterID:
+                description: RequesterClusterID is the ID of the cluster requesting
+                  resources
+                type: string
+            required:
+            - providerClusterID
+            - requesterClusterID
+            type: object
+          status:
+            description: NetworkBondStatus defines the observed state of NetworkBond
+            properties:
+              lastUpdateTime:
+                description: LastUpdateTime is when this bond was last updated
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
