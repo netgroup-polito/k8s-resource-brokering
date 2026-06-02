@@ -70,7 +70,7 @@ func TestRankClusters_PicksClusterWithMoreResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-2" {
+	if len(results) == 0 || results[0].Cluster.Spec.ClusterID != "cluster-2" {
 		t.Errorf("expected cluster-2, got %v", results)
 	}
 }
@@ -100,7 +100,7 @@ func TestRankClusters_SkipsRequesterOwnCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-2" {
+	if len(results) == 0 || results[0].Cluster.Spec.ClusterID != "cluster-2" {
 		t.Errorf("expected cluster-2, got %v (should never pick own cluster)", results)
 	}
 }
@@ -152,7 +152,7 @@ func TestRankClusters_SkipsInactiveClusters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-2" {
+	if len(results) == 0 || results[0].Cluster.Spec.ClusterID != "cluster-2" {
 		t.Errorf("expected cluster-2 (active), got %v", results)
 	}
 }
@@ -216,7 +216,7 @@ func TestRankClusters_PrefersHigherAvailableRatio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) == 0 || results[0].Spec.ClusterID != "cluster-1" {
+	if len(results) == 0 || results[0].Cluster.Spec.ClusterID != "cluster-1" {
 		t.Errorf("expected cluster-1 (higher available ratio), got %v", results)
 	}
 }

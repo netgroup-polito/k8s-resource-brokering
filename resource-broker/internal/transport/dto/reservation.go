@@ -31,7 +31,13 @@ type ReservationRequestDTO struct {
 	Location           *LocationDTO          `json:"location,omitempty"`
 }
 
+// CandidateClusterDTO pairs a cluster ID with information about the ranking decision
+type CandidateClusterDTO struct {
+	ClusterID   string `json:"clusterID"`
+	Information string `json:"information,omitempty"`
+}
+
 // EvaluationResponseDTO is returned when evaluating a request without reserving
 type EvaluationResponseDTO struct {
-	CandidateClusters []string `json:"candidateClusters"`
+	CandidateClusters []CandidateClusterDTO `json:"candidateClusters"`
 }

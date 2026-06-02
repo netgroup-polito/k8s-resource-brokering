@@ -122,7 +122,7 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("No suitable cluster found: %v", err))
 			return
 		}
-		bestCluster = bestClusters[0]
+		bestCluster = bestClusters[0].Cluster
 	}
 
 	// Generate reservation name

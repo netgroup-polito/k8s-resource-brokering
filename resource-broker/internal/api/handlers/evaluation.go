@@ -89,9 +89,12 @@ func (h *Handler) PostEvaluation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var candidates []string
-	for _, cluster := range bestClusters {
-		candidates = append(candidates, cluster.Spec.ClusterID)
+	var candidates []dto.CandidateClusterDTO
+	for _, ranked := range bestClusters {
+		candidates = append(candidates, dto.CandidateClusterDTO{
+			ClusterID:   ranked.Cluster.Spec.ClusterID,
+			Information: ranked.Information,
+		})
 	}
 
 	response := dto.EvaluationResponseDTO{

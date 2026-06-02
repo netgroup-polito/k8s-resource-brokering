@@ -184,7 +184,7 @@ func (r *ReservationReconciler) handlePendingReservation(
 	}
 
 	// Update reservation with selected cluster
-	bestCluster := bestClusters[0]
+	bestCluster := bestClusters[0].Cluster
 	reservation.Spec.TargetClusterID = bestCluster.Spec.ClusterID
 	if err := r.Update(ctx, reservation); err != nil {
 		logger.Error(err, "Failed to update reservation with target cluster")

@@ -75,8 +75,8 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
 			if err != nil {
 				logger.Error(err, "Failed to evaluate providers")
-			} else if len(evaluation.CandidateClusters) > 0 && evaluation.CandidateClusters[0] != resourceReq.Status.TargetClusterID {
-				newTarget := evaluation.CandidateClusters[0]
+			} else if len(evaluation.CandidateClusters) > 0 && evaluation.CandidateClusters[0].ClusterID != resourceReq.Status.TargetClusterID {
+				newTarget := evaluation.CandidateClusters[0].ClusterID
 				logger.Info("Found better provider!", "old", resourceReq.Status.TargetClusterID, "new", newTarget)
 
 				// 1. Delete old instruction to trigger teardown
@@ -160,7 +160,7 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// For simplicity, we just pick the first (best) candidate from the list
-	bestCandidate := evaluation.CandidateClusters[0]
+	bestCandidate := evaluation.CandidateClusters[0].ClusterID
 	logger.Info("Evaluation complete", "candidates", evaluation.CandidateClusters, "selected", bestCandidate)
 
 	// Phase 2: Send synchronous reservation request for the specific target
