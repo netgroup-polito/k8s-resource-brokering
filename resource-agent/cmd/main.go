@@ -97,6 +97,7 @@ func main() {
 	var mockGeoURL string // URL for mock-geo service
 	var advertisedIP string
 	var policy string // Policy for cluster ranking
+	var reEvalInterval time.Duration
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -138,6 +139,7 @@ func main() {
 	flag.StringVar(&mockGeoURL, "mock-geo-url", "", "URL of the mock-geo service (e.g. http://mock-geo:8080)")
 	flag.StringVar(&advertisedIP, "advertised-ip", "", "Optional forced IP to use for geolocation")
 	flag.StringVar(&policy, "policy", "", "Policy for cluster ranking (e.g., 'latency')")
+	flag.DurationVar(&reEvalInterval, "re-eval-interval", 1*time.Hour, "Interval for periodic re-evaluation of providers")
 
 	opts := zap.Options{
 		Development: true,
@@ -424,6 +426,7 @@ func main() {
 			MockGeoURL:           mockGeoURL,
 			ClusterID:            clusterID,
 			ForcedGeoIP:          advertisedIP,
+			ReEvalInterval:       reEvalInterval,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ResourceRequest")
 			os.Exit(1)

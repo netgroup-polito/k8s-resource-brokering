@@ -50,8 +50,8 @@ spec:
             description: NetworkBondSpec defines the desired state of NetworkBond
             properties:
               actualLatency:
-                description: ActualLatency is the actual measured RTT latency between
-                  the clusters in milliseconds (reserved for future use)
+                description: ActualLatency is the actual measured RTT latency in milliseconds,
+                  reported by the agent via Liqo metrics
                 type: number
               estimatedLatency:
                 description: EstimatedLatency is the estimated RTT latency between
@@ -64,6 +64,11 @@ spec:
               requesterClusterID:
                 description: RequesterClusterID is the ID of the cluster requesting
                   resources
+                type: string
+              timestamp:
+                description: Timestamp is the broker's time when ActualLatency was
+                  last updated
+                format: date-time
                 type: string
             required:
             - providerClusterID

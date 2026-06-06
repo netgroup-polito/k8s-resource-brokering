@@ -31,8 +31,11 @@ type NetworkBondSpec struct {
 	// EstimatedLatency is the estimated RTT latency between the clusters in milliseconds
 	EstimatedLatency float64 `json:"estimatedLatency,omitempty"`
 
-	// ActualLatency is the actual measured RTT latency between the clusters in milliseconds (reserved for future use)
+	// ActualLatency is the actual measured RTT latency in milliseconds, reported by the agent via Liqo metrics
 	ActualLatency float64 `json:"actualLatency,omitempty"`
+
+	// Timestamp is the broker's time when ActualLatency was last updated
+	Timestamp metav1.Time `json:"timestamp,omitempty"`
 }
 
 // NetworkBondStatus defines the observed state of NetworkBond

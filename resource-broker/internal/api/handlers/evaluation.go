@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
@@ -73,6 +75,33 @@ func (h *Handler) PostEvaluation(w http.ResponseWriter, r *http.Request) {
 				policy = advList.Items[i].Spec.Policy
 				break
 			}
+		}
+	}
+
+	// Save actual latency to NetworkBond if the agent reports a current provider
+	if reqDTO.CurrentProviderID != "" {
+		bondName := fmt.Sprintf("%s-%s", requesterID, reqDTO.CurrentProviderID)
+		bond := &brokerv1alpha1.NetworkBond{}
+		if err := h.k8sClient.Get(ctx, types.NamespacedName{
+			Name: bondName, Namespace: "default",
+		}, bond); err == nil {
+			if reqDTO.MeasuredLatencyMs != nil {
+				// Use the real measured latency from Liqo metrics
+				bond.Spec.ActualLatency = *reqDTO.MeasuredLatencyMs
+				logger.Info("Updated NetworkBond with measured latency",
+					"bond", bondName, "actualLatencyMs", *reqDTO.MeasuredLatencyMs)
+			} else if bond.Spec.ActualLatency == 0 {
+				// Scraping failed, but we know a connection exists — use estimated as fallback
+				bond.Spec.ActualLatency = bond.Spec.EstimatedLatency
+				logger.Info("Updated NetworkBond with estimated fallback (scraping failed)",
+					"bond", bondName, "actualLatencyMs", bond.Spec.EstimatedLatency)
+			}
+			bond.Spec.Timestamp = metav1.Now()
+			if err := h.k8sClient.Update(ctx, bond); err != nil {
+				logger.Error(err, "Failed to update NetworkBond", "bond", bondName)
+			}
+		} else {
+			logger.Info("NetworkBond not found, skipping actual latency update", "bond", bondName)
 		}
 	}
 

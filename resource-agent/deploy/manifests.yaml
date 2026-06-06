@@ -56,6 +56,7 @@ spec:
         - --mock-geo-url=$(MOCK_GEO_URL)
         - --advertised-ip=$(ADVERTISED_IP)
         - --policy=$(POLICY)
+        - --re-eval-interval=$(RE_EVAL_INTERVAL)
         env:
         - name: CLUSTER_ID
           value: "agent-cluster-1" # To be overridden or templated
@@ -75,6 +76,8 @@ spec:
           value: ""
         - name: POLICY
           value: ""
+        - name: RE_EVAL_INTERVAL
+          value: "1h"
         ports:
         - containerPort: 8082
         volumeMounts:

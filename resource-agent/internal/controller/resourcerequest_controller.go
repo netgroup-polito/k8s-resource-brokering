@@ -16,6 +16,7 @@ import (
 
 	rearv1alpha1 "github.com/mehdiazizian/liqo-resource-agent/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/geo"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/metrics"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport/dto"
 )
@@ -32,6 +33,7 @@ type ResourceRequestReconciler struct {
 	MockGeoURL           string
 	ClusterID            string
 	ForcedGeoIP          string
+	ReEvalInterval       time.Duration // How often to re-evaluate providers (default: 1h)
 }
 
 // +kubebuilder:rbac:groups=rear.fluidos.eu,resources=resourcerequests,verbs=get;list;watch;create;update;patch;delete
@@ -52,7 +54,21 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Skip if already processed (Reserved or Failed)
 	if resourceReq.Status.Phase == "Reserved" {
-		// Periodically re-evaluate (every hour)
+		// Determine the re-evaluation interval
+		reEvalInterval := r.ReEvalInterval
+		if reEvalInterval == 0 {
+			reEvalInterval = 1 * time.Hour
+		}
+
+		// Skip re-evaluation if not enough time has passed since last status update.
+		// This prevents immediate re-evaluation right after setting Reserved status,
+		// which would cause a switch loop before the peering is even established.
+		if !resourceReq.Status.LastUpdateTime.IsZero() &&
+			time.Since(resourceReq.Status.LastUpdateTime.Time) < reEvalInterval {
+			return ctrl.Result{RequeueAfter: reEvalInterval - time.Since(resourceReq.Status.LastUpdateTime.Time)}, nil
+		}
+
+		// Periodically re-evaluate
 		if r.BrokerCommunicator != nil {
 			logger.Info("Re-evaluating best provider", "current", resourceReq.Status.TargetClusterID)
 			evalReq := &dto.ReservationRequestDTO{
@@ -70,6 +86,20 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				logger.Error(err, "Failed to get geo location")
 			} else if loc != nil {
 				evalReq.Location = loc
+			}
+
+			// Measure actual latency to current provider via Liqo gateway metrics (best-effort)
+			if resourceReq.Status.TargetClusterID != "" {
+				evalReq.CurrentProviderID = resourceReq.Status.TargetClusterID
+				latencyMs, scrapeErr := metrics.ScrapeGatewayLatency(ctx, r.Client, resourceReq.Status.TargetClusterID)
+				if scrapeErr != nil {
+					logger.Info("Could not scrape gateway latency, proceeding without it", "error", scrapeErr)
+				} else {
+					evalReq.MeasuredLatencyMs = &latencyMs
+					logger.Info("Measured actual latency to current provider",
+						"provider", resourceReq.Status.TargetClusterID,
+						"latencyMs", latencyMs)
+				}
 			}
 
 			evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
@@ -99,7 +129,7 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				return r.updateStatus(ctx, resourceReq, "Pending", "", "", "Switching to a better provider: "+newTarget)
 			}
 		}
-		return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
+		return ctrl.Result{RequeueAfter: reEvalInterval}, nil
 	}
 
 	if resourceReq.Status.Phase == "Failed" {

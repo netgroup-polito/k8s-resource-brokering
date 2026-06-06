@@ -37,9 +37,13 @@ type ReservationStatusDTO struct {
 type ReservationRequestDTO struct {
 	RequestedResources ResourceQuantitiesDTO `json:"requestedResources"`
 	Priority           int32                 `json:"priority,omitempty"`
-	Duration           string                `json:"duration,omitempty"` // e.g., "1h", "30m"
+	Duration           string                `json:"duration,omitempty"`        // e.g., "1h", "30m"
 	TargetClusterID    string                `json:"targetClusterID,omitempty"` // Optional specific cluster
 	Location           *LocationDTO          `json:"location,omitempty"`
+
+	// These two fields are used for the re-evaluations. They represent the current provider the requester is peered with and their latency
+	CurrentProviderID string   `json:"currentProviderID,omitempty"`
+	MeasuredLatencyMs *float64 `json:"measuredLatencyMs,omitempty"`
 }
 
 // CandidateClusterDTO pairs a cluster ID with information about the ranking decision
