@@ -6,9 +6,11 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"time"
 
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -136,10 +138,17 @@ func rankLatency(scoredClusters []ScoredCluster, maxResults int) []RankedCluster
 		if i >= maxResults {
 			break
 		}
-		info := "Never connected to this cluster"
+		baseInfo := "Never connected to this cluster"
 		if sc.isActual {
-			info = "Already connected with this cluster"
+			baseInfo = "Already connected with this cluster"
 		}
+		
+		costStr := "unknown"
+		if sc.cluster.Spec.Cost != nil {
+			costStr = fmt.Sprintf("%.2f", sc.cluster.Spec.Cost.EnergyCost)
+		}
+		
+		info := fmt.Sprintf("cost: %s. info: %s", costStr, baseInfo)
 		bestClusters = append(bestClusters, RankedCluster{Cluster: sc.cluster, Information: info})
 	}
 	return bestClusters
@@ -178,27 +187,32 @@ func buildStandardInfo(cluster *brokerv1alpha1.ClusterAdvertisement) string {
 	}
 
 	// Tier based on availability
-	var info string
+	var baseInfo string
 	switch {
 	case avgRatio >= 0.6:
-		info = "High resource availability"
+		baseInfo = "High resource availability"
 	case avgRatio >= 0.3:
-		info = "Moderate resource availability"
+		baseInfo = "Moderate resource availability"
 	default:
-		info = "Low resource availability"
+		baseInfo = "Low resource availability"
 	}
 
 	// Append energy characteristics
 	if cluster.Spec.Cost != nil {
 		if cluster.Spec.Cost.Renewable {
-			info += ", eco-friendly"
+			baseInfo += ", eco-friendly"
 		}
 		if cluster.Spec.Cost.EnergyCost < 0.3 {
-			info += ", low energy cost"
+			baseInfo += ", low energy cost"
 		}
 	}
 
-	return info
+	costStr := "unknown"
+	if cluster.Spec.Cost != nil {
+		costStr = fmt.Sprintf("%.2f", cluster.Spec.Cost.EnergyCost)
+	}
+
+	return fmt.Sprintf("cost: %s. info: %s", costStr, baseInfo)
 }
 
 // hasEnoughResources checks if cluster has sufficient available resources
@@ -285,6 +299,23 @@ func (d *DecisionEngine) calculateScoreLatency(
 	}, existingBond)
 
 	if err == nil {
+		// Check if the bond is older than 30 days
+		if !existingBond.Spec.Timestamp.IsZero() && time.Since(existingBond.Spec.Timestamp.Time) > 30*24*time.Hour {
+			logger.Info("NetworkBond is older than 30 days, recalculating estimated latency and discarding actual latency",
+				"requester", requesterAdv.Spec.ClusterID,
+				"provider", cluster.Spec.ClusterID)
+			
+			existingBond.Spec.ActualLatency = 0
+			existingBond.Spec.EstimatedLatency = estimatedRTTms(requesterAdv.Spec.Location, cluster.Spec.Location)
+			existingBond.Spec.Timestamp = metav1.Now()
+			
+			if updateErr := d.Client.Update(ctx, existingBond); updateErr != nil {
+				logger.Error(updateErr, "Failed to update expired NetworkBond", "bond", bondName)
+			}
+			
+			return existingBond.Spec.EstimatedLatency, false
+		}
+
 		// 1a. NetworkBond exists
 		if existingBond.Spec.ActualLatency > 0 {
 			// 2a. ActualLatency is available — use it
@@ -303,29 +334,67 @@ func (d *DecisionEngine) calculateScoreLatency(
 		return existingBond.Spec.EstimatedLatency, false
 	}
 
-	// 1b. NetworkBond does not exist — calculate estimated latency with Haversine
-	latency := estimatedRTTms(requesterAdv.Spec.Location, cluster.Spec.Location)
+	// 1b. NetworkBond does not exist — compute region match and check for existing bonds in the same region pair
+	match := regionMatch(requesterAdv.Spec.Location, cluster.Spec.Location)
 
-	logger.Info("Calculated geographical distance for latency policy",
-		"requester", requesterAdv.Spec.ClusterID,
-		"provider", cluster.Spec.ClusterID,
-		"estimated_latency_ms", latency)
+	// Try to find an existing bond with the same region match that has actual latency
+	var latency float64
+	if match != "" {
+		bondList := &brokerv1alpha1.NetworkBondList{}
+		if listErr := d.Client.List(ctx, bondList); listErr == nil {
+			for i := range bondList.Items {
+				if bondList.Items[i].Spec.Match == match && bondList.Items[i].Spec.ActualLatency > 0 {
+					latency = bondList.Items[i].Spec.ActualLatency
+					logger.Info("Using actual latency from matching region bond",
+						"requester", requesterAdv.Spec.ClusterID,
+						"provider", cluster.Spec.ClusterID,
+						"matchingBond", bondList.Items[i].Name,
+						"match", match,
+						"latency_ms", latency)
+					break
+				}
+			}
+		}
+	}
+
+	// Fallback to Haversine if no matching bond with actual latency was found
+	if latency == 0 {
+		latency = estimatedRTTms(requesterAdv.Spec.Location, cluster.Spec.Location)
+		logger.Info("Calculated geographical distance for latency policy",
+			"requester", requesterAdv.Spec.ClusterID,
+			"provider", cluster.Spec.ClusterID,
+			"estimated_latency_ms", latency)
+	}
 
 	// 2b. Create NetworkBond CRD in background for latency tracking
-	go func(reqID, provID string, lat float64) {
+	go func(reqID, provID string, lat float64, m string) {
 		bond := &brokerv1alpha1.NetworkBond{}
 		bond.Name = bondName
 		bond.Namespace = cluster.Namespace
 		bond.Spec.RequesterClusterID = reqID
 		bond.Spec.ProviderClusterID = provID
 		bond.Spec.EstimatedLatency = lat
+		bond.Spec.Match = m
 
 		if createErr := d.Client.Create(context.Background(), bond); createErr == nil {
-			logger.Info("Created NetworkBond CRD for latency tracking", "bond", bond.Name)
+			logger.Info("Created NetworkBond CRD for latency tracking", "bond", bond.Name, "match", m)
 		}
-	}(requesterAdv.Spec.ClusterID, cluster.Spec.ClusterID, latency)
+	}(requesterAdv.Spec.ClusterID, cluster.Spec.ClusterID, latency, match)
 
 	return latency, false
+}
+
+// regionMatch returns the sorted region pair string (e.g. "CA-LOM") from two LocationInfo.
+// Returns empty string if either location is nil or has no Region.
+func regionMatch(loc1, loc2 *brokerv1alpha1.LocationInfo) string {
+	if loc1 == nil || loc2 == nil || loc1.Region == "" || loc2.Region == "" {
+		return ""
+	}
+	a, b := loc1.Region, loc2.Region
+	if a > b {
+		a, b = b, a
+	}
+	return a + "-" + b
 }
 
 // calculateScore computes a score for the cluster based on availability

@@ -36,6 +36,9 @@ type NetworkBondSpec struct {
 
 	// Timestamp is the broker's time when ActualLatency was last updated
 	Timestamp metav1.Time `json:"timestamp,omitempty"`
+
+	// Match is the sorted region pair (e.g. "CA-LOM") used to find bonds between clusters in the same regions
+	Match string `json:"match,omitempty"`
 }
 
 // NetworkBondStatus defines the observed state of NetworkBond
