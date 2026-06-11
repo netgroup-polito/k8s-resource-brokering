@@ -59,6 +59,18 @@ spec:
           spec:
             description: ClusterAdvertisementSpec defines the desired state of ClusterAdvertisement
             properties:
+              carbonIntensity:
+                description: |-
+                  CarbonIntensity is the 24-hour carbon intensity forecast (gCO2eq/kWh) for this cluster's region.
+                  Populated by the broker from the RegionEcoForecast cache (or directly by the agent in future).
+                items:
+                  type: integer
+                type: array
+              carbonLastUpdate:
+                description: CarbonLastUpdate is when the carbon intensity data was
+                  last refreshed
+                format: date-time
+                type: string
               clusterID:
                 type: string
               clusterName:

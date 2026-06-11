@@ -69,6 +69,7 @@ spec:
         - --broker-interface=http
         - --http-port=8444
         - --http-cert-path=/etc/broker/certs
+        - --mock-eco-url=http://mock-eco:8081
         ports:
         - containerPort: 8444
         - containerPort: 8081

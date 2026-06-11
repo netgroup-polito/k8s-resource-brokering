@@ -38,6 +38,13 @@ type ClusterAdvertisementSpec struct {
 
 	// Policy defines the resource selection preference for this cluster when it acts as a requester
 	Policy string `json:"policy,omitempty"`
+
+	// CarbonIntensity is the 24-hour carbon intensity forecast (gCO2eq/kWh) for this cluster's region.
+	// Populated by the broker from the RegionEcoForecast cache (or directly by the agent in future).
+	CarbonIntensity []int `json:"carbonIntensity,omitempty"`
+
+	// CarbonLastUpdate is when the carbon intensity data was last refreshed
+	CarbonLastUpdate metav1.Time `json:"carbonLastUpdate,omitempty"`
 }
 
 // ResourceMetrics represents available resources with detailed breakdown
