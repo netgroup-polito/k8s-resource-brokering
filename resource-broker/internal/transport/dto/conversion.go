@@ -81,6 +81,14 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 		clusterAdv.Spec.Resources.Reserved = &reserved
 	}
 
+	// Include CarbonIntensity if provided by the agent
+	if len(dto.CarbonIntensity) > 0 {
+		clusterAdv.Spec.CarbonIntensity = dto.CarbonIntensity
+		if dto.CarbonLastUpdate != nil {
+			clusterAdv.Spec.CarbonLastUpdate = metav1.Time{Time: *dto.CarbonLastUpdate}
+		}
+	}
+
 	return clusterAdv, nil
 }
 
@@ -125,6 +133,15 @@ func FromClusterAdvertisement(clusterAdv *brokerv1alpha1.ClusterAdvertisement) *
 	if clusterAdv.Spec.Resources.Reserved != nil {
 		reserved := toResourceQuantitiesDTO(*clusterAdv.Spec.Resources.Reserved)
 		dto.Resources.Reserved = &reserved
+	}
+
+	// Include CarbonIntensity if present
+	if len(clusterAdv.Spec.CarbonIntensity) > 0 {
+		dto.CarbonIntensity = clusterAdv.Spec.CarbonIntensity
+		if !clusterAdv.Spec.CarbonLastUpdate.IsZero() {
+			t := clusterAdv.Spec.CarbonLastUpdate.Time
+			dto.CarbonLastUpdate = &t
+		}
 	}
 
 	return dto

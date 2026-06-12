@@ -54,6 +54,7 @@ spec:
         - --sharing-logic=$(SHARING_LOGIC)
         - --sharing-percentage=$(SHARING_PERCENTAGE)
         - --mock-geo-url=$(MOCK_GEO_URL)
+        - --mock-eco-url=$(MOCK_ECO_URL)
         - --advertised-ip=$(ADVERTISED_IP)
         - --policy=$(POLICY)
         - --re-eval-interval=$(RE_EVAL_INTERVAL)
@@ -71,6 +72,8 @@ spec:
         - name: SHARING_PERCENTAGE
           value: "100"
         - name: MOCK_GEO_URL
+          value: ""
+        - name: MOCK_ECO_URL
           value: ""
         - name: ADVERTISED_IP
           value: ""

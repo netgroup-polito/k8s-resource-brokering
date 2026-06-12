@@ -137,16 +137,17 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		sharingLogic      string
 		sharingPercentage string
 		mockGeoURL        string
+		mockEcoURL        string
 		advertisedIP      string
 		policy            string
 		reEvalInterval    string
 	}{
 		// Requester (e.g. simulated in US) — short re-eval interval for testing
-		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100", "http://broker-cluster-control-plane:30080", "8.8.1.1", "latency", "30s"},
+		{cluster.Agent1Cluster, "agent-cluster-1", "true", "0.5", "requester", "all", "100", "http://broker-cluster-control-plane:30080", "http://broker-cluster-control-plane:30081", "8.8.1.1", "latency", "30s"},
 		// Provider 1 (e.g. simulated in Italy)
-		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80", "http://broker-cluster-control-plane:30080", "8.8.1.8", "", "1h"},
+		{cluster.Agent2Cluster, "agent-cluster-2", "false", "0.8", "provider", "percentage", "80", "http://broker-cluster-control-plane:30080", "http://broker-cluster-control-plane:30081", "8.8.1.8", "", "1h"},
 		// Provider 2 (e.g. simulated in Germany)
-		{cluster.Agent3Cluster, "agent-cluster-3", "true", "0.3", "provider", "all", "100", "http://broker-cluster-control-plane:30080", "8.8.1.6", "", "1h"},
+		{cluster.Agent3Cluster, "agent-cluster-3", "true", "0.3", "provider", "all", "100", "http://broker-cluster-control-plane:30080", "http://broker-cluster-control-plane:30081", "8.8.1.6", "", "1h"},
 	}
 
 	for _, agent := range agents {
@@ -185,8 +186,9 @@ func DeployAgents(rootDir string, kubeconfigsDir string) error {
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"all\"", "value: \""+agent.sharingLogic+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "value: \"100\"", "value: \""+agent.sharingPercentage+"\"")
 
-		// Map mock-geo URL and IP and Policy
+		// Map mock-geo URL, mock-eco URL, IP and Policy
 		modifiedContent = strings.ReplaceAll(modifiedContent, "name: MOCK_GEO_URL\n          value: \"\"", "name: MOCK_GEO_URL\n          value: \""+agent.mockGeoURL+"\"")
+		modifiedContent = strings.ReplaceAll(modifiedContent, "name: MOCK_ECO_URL\n          value: \"\"", "name: MOCK_ECO_URL\n          value: \""+agent.mockEcoURL+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "name: ADVERTISED_IP\n          value: \"\"", "name: ADVERTISED_IP\n          value: \""+agent.advertisedIP+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "name: POLICY\n          value: \"\"", "name: POLICY\n          value: \""+agent.policy+"\"")
 		modifiedContent = strings.ReplaceAll(modifiedContent, "name: RE_EVAL_INTERVAL\n          value: \"1h\"", "name: RE_EVAL_INTERVAL\n          value: \""+agent.reEvalInterval+"\"")

@@ -95,6 +95,7 @@ func main() {
 	var sharingFixedMemory string
 	var sharingFixedGPU string
 	var mockGeoURL string // URL for mock-geo service
+	var mockEcoURL string // URL for mock-eco carbon intensity service
 	var advertisedIP string
 	var policy string // Policy for cluster ranking
 	var reEvalInterval time.Duration
@@ -137,6 +138,7 @@ func main() {
 	flag.StringVar(&sharingFixedMemory, "sharing-fixed-memory", "", "Fixed amount of Memory to share (if sharing-logic=fixed)")
 	flag.StringVar(&sharingFixedGPU, "sharing-fixed-gpu", "", "Fixed amount of GPU to share (if sharing-logic=fixed)")
 	flag.StringVar(&mockGeoURL, "mock-geo-url", "", "URL of the mock-geo service (e.g. http://mock-geo:8080)")
+	flag.StringVar(&mockEcoURL, "mock-eco-url", "", "URL of the mock-eco carbon intensity service (e.g. http://mock-eco:8081)")
 	flag.StringVar(&advertisedIP, "advertised-ip", "", "Optional forced IP to use for geolocation")
 	flag.StringVar(&policy, "policy", "", "Policy for cluster ranking (e.g., 'latency')")
 	flag.DurationVar(&reEvalInterval, "re-eval-interval", 1*time.Hour, "Interval for periodic re-evaluation of providers")
@@ -369,6 +371,7 @@ func main() {
 		Renewable:  renewable,
 		EnergyCost: energyCost,
 		MockGeoURL: mockGeoURL,
+		MockEcoURL: mockEcoURL,
 		ForcedGeoIP: advertisedIP,
 		AgentRole:   agentRole,
 	}).SetupWithManager(mgr); err != nil {

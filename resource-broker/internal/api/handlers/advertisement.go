@@ -77,6 +77,10 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			// Keep a copy of the old policy field
 			oldPolicy := latest.Spec.Policy
 
+			// Keep a copy of the old carbon intensity data (broker-managed)
+			oldCarbonIntensity := latest.Spec.CarbonIntensity
+			oldCarbonLastUpdate := latest.Spec.CarbonLastUpdate
+
 			// Convert DTO to k8s ClusterAdvertisement
 			clusterAdvRetry, err2 := dto.ToClusterAdvertisement(&incomingAdv, h.namespace)
 			if err2 != nil {
@@ -87,6 +91,12 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			latest.Spec = clusterAdvRetry.Spec
 			latest.Spec.Resources.Reserved = reserved
 			latest.Spec.Policy = oldPolicy
+
+			// Preserve broker-managed CarbonIntensity if the agent didn't send its own
+			if len(latest.Spec.CarbonIntensity) == 0 && len(oldCarbonIntensity) > 0 {
+				latest.Spec.CarbonIntensity = oldCarbonIntensity
+				latest.Spec.CarbonLastUpdate = oldCarbonLastUpdate
+			}
 
 			// CRITICAL: Subtract Reserved from the Agent's reported Available to prevent
 			// over-allocation in the window before the Agent enforces the instruction!

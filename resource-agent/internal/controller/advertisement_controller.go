@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	rearv1alpha1 "github.com/mehdiazizian/liqo-resource-agent/api/v1alpha1"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/eco"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/geo"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/metrics"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/publisher" // ← Add this line
@@ -54,6 +55,7 @@ type AdvertisementReconciler struct {
 	Renewable            bool          // Green energy flag
 	EnergyCost           float64       // Normalized cost (0-1)
 	MockGeoURL           string        // URL for the mock-geo service
+	MockEcoURL           string        // URL for the mock-eco carbon intensity service
 	ForcedGeoIP          string        // Optional forced IP for geolocation
 	AgentRole            string        // Role of the agent (requester or provider)
 }
@@ -184,6 +186,17 @@ func (r *AdvertisementReconciler) publishToBroker(ctx context.Context, advertise
 			logger.Error(err, "Failed to get geo location, continuing without it")
 		} else if loc != nil {
 			advDTO.Location = loc
+		}
+
+		// Add carbon intensity forecast if available
+		if loc != nil && loc.Region != "" {
+			carbonData, err := eco.GetCarbonForecast(r.MockEcoURL, loc.Region)
+			if err != nil {
+				logger.Error(err, "Failed to get carbon forecast, continuing without it")
+			} else if carbonData != nil {
+				advDTO.CarbonIntensity = carbonData.CarbonIntensity
+				advDTO.CarbonLastUpdate = &carbonData.LastUpdate
+			}
 		}
 
 		providerInstructions, err := r.BrokerCommunicator.PublishAdvertisement(ctx, advDTO)
