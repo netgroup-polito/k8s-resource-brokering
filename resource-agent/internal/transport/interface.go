@@ -19,10 +19,21 @@ type BrokerCommunicator interface {
 	// in the response. No polling needed.
 	RequestReservation(ctx context.Context, req *dto.ReservationRequestDTO) (*dto.ReservationDTO, error)
 
+	// EvaluateProviders queries the broker to find the best provider for the
+	// requested resources without making a reservation.
+	EvaluateProviders(ctx context.Context, req *dto.ReservationRequestDTO) (*dto.EvaluationResponseDTO, error)
+
 	// FetchInstructions polls the broker for pending provider instructions.
 	// This provides near-instant instruction delivery (every few seconds)
 	// instead of waiting for the next advertisement cycle.
 	FetchInstructions(ctx context.Context) ([]*dto.ReservationDTO, error)
+
+	// GetReservation fetches a specific reservation by ID
+	GetReservation(ctx context.Context, reservationID string) (*dto.ReservationDTO, error)
+
+	// UploadPeeringKubeconfig securely sends the generated peering-user kubeconfig
+	// to the broker, so that the requester cluster can download and use it.
+	UploadPeeringKubeconfig(ctx context.Context, reservationID string, kubeconfig string) error
 
 	// Ping checks connectivity to broker
 	Ping(ctx context.Context) error

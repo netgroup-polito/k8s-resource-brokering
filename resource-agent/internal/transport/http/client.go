@@ -190,6 +190,40 @@ func (c *HTTPCommunicator) RequestReservation(ctx context.Context, reqDTO *dto.R
 	return &reservation, nil
 }
 
+// EvaluateProviders queries the broker to find the best provider for the
+// requested resources without making a reservation.
+func (c *HTTPCommunicator) EvaluateProviders(ctx context.Context, reqDTO *dto.ReservationRequestDTO) (*dto.EvaluationResponseDTO, error) {
+	body, err := json.Marshal(reqDTO)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal evaluation request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/evaluations", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doWithRetry(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send evaluation request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("broker returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var evaluation dto.EvaluationResponseDTO
+	if err := json.NewDecoder(resp.Body).Decode(&evaluation); err != nil {
+		return nil, fmt.Errorf("failed to decode evaluation response: %w", err)
+	}
+
+	return &evaluation, nil
+}
+
 // FetchInstructions polls the broker for pending provider instructions.
 // This is a lightweight GET request that returns near-instantly.
 func (c *HTTPCommunicator) FetchInstructions(ctx context.Context) ([]*dto.ReservationDTO, error) {
@@ -217,6 +251,72 @@ func (c *HTTPCommunicator) FetchInstructions(ctx context.Context) ([]*dto.Reserv
 	}
 
 	return instructions, nil
+}
+
+// GetReservation fetches a specific reservation from the broker
+func (c *HTTPCommunicator) GetReservation(ctx context.Context, reservationID string) (*dto.ReservationDTO, error) {
+	url := fmt.Sprintf("%s/api/v1/reservations/%s", c.baseURL, reservationID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch reservation: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("broker returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var reservation dto.ReservationDTO
+	if err := json.NewDecoder(resp.Body).Decode(&reservation); err != nil {
+		return nil, fmt.Errorf("failed to decode reservation: %w", err)
+	}
+
+	return &reservation, nil
+}
+
+// UploadPeeringKubeconfig securely sends the generated peering-user kubeconfig
+// to the broker, so that the requester cluster can download and use it.
+func (c *HTTPCommunicator) UploadPeeringKubeconfig(ctx context.Context, reservationID string, kubeconfig string) error {
+	logger := log.FromContext(ctx).WithName("http-communicator")
+
+	payload := struct {
+		Kubeconfig string `json:"kubeconfig"`
+	}{
+		Kubeconfig: kubeconfig,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kubeconfig payload: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/reservations/%s/kubeconfig", c.baseURL, reservationID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doWithRetry(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to upload peering kubeconfig: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("broker returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	logger.Info("Successfully uploaded peering kubeconfig", "reservationID", reservationID)
+	return nil
 }
 
 // Ping checks connectivity to broker

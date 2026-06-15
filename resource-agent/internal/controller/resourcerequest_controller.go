@@ -3,16 +3,20 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	rearv1alpha1 "github.com/mehdiazizian/liqo-resource-agent/api/v1alpha1"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/geo"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/metrics"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport/dto"
 )
@@ -26,6 +30,10 @@ type ResourceRequestReconciler struct {
 	Scheme               *runtime.Scheme
 	BrokerCommunicator   transport.BrokerCommunicator
 	InstructionNamespace string
+	MockGeoURL           string
+	ClusterID            string
+	ForcedGeoIP          string
+	ReEvalInterval       time.Duration // How often to re-evaluate providers (default: 1h)
 }
 
 // +kubebuilder:rbac:groups=rear.fluidos.eu,resources=resourcerequests,verbs=get;list;watch;create;update;patch;delete
@@ -45,7 +53,86 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Skip if already processed (Reserved or Failed)
-	if resourceReq.Status.Phase == "Reserved" || resourceReq.Status.Phase == "Failed" {
+	if resourceReq.Status.Phase == "Reserved" {
+		// Determine the re-evaluation interval
+		reEvalInterval := r.ReEvalInterval
+		if reEvalInterval == 0 {
+			reEvalInterval = 1 * time.Hour
+		}
+
+		// Skip re-evaluation if not enough time has passed since last status update.
+		// This prevents immediate re-evaluation right after setting Reserved status,
+		// which would cause a switch loop before the peering is even established.
+		if !resourceReq.Status.LastUpdateTime.IsZero() &&
+			time.Since(resourceReq.Status.LastUpdateTime.Time) < reEvalInterval {
+			return ctrl.Result{RequeueAfter: reEvalInterval - time.Since(resourceReq.Status.LastUpdateTime.Time)}, nil
+		}
+
+		// Periodically re-evaluate
+		if r.BrokerCommunicator != nil {
+			logger.Info("Re-evaluating best provider", "current", resourceReq.Status.TargetClusterID)
+			evalReq := &dto.ReservationRequestDTO{
+				RequestedResources: dto.ResourceQuantitiesDTO{
+					CPU:    resourceReq.Spec.RequestedCPU,
+					Memory: resourceReq.Spec.RequestedMemory,
+					GPU:    resourceReq.Spec.RequestedGPU,
+				},
+				Priority: resourceReq.Spec.Priority,
+				Duration: resourceReq.Spec.Duration,
+			}
+
+			loc, err := geo.GetLocation(r.MockGeoURL, r.ClusterID, r.ForcedGeoIP)
+			if err != nil {
+				logger.Error(err, "Failed to get geo location")
+			} else if loc != nil {
+				evalReq.Location = loc
+			}
+
+			// Measure actual latency to current provider via Liqo gateway metrics (best-effort)
+			if resourceReq.Status.TargetClusterID != "" {
+				evalReq.CurrentProviderID = resourceReq.Status.TargetClusterID
+				latencyMs, scrapeErr := metrics.ScrapeGatewayLatency(ctx, r.Client, resourceReq.Status.TargetClusterID)
+				if scrapeErr != nil {
+					logger.Info("Could not scrape gateway latency, proceeding without it", "error", scrapeErr)
+				} else {
+					evalReq.MeasuredLatencyMs = &latencyMs
+					logger.Info("Measured actual latency to current provider",
+						"provider", resourceReq.Status.TargetClusterID,
+						"latencyMs", latencyMs)
+				}
+			}
+
+			evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
+			if err != nil {
+				logger.Error(err, "Failed to evaluate providers")
+			} else if len(evaluation.CandidateClusters) > 0 && evaluation.CandidateClusters[0].ClusterID != resourceReq.Status.TargetClusterID {
+				newTarget := evaluation.CandidateClusters[0].ClusterID
+				logger.Info("Found better provider!", "old", resourceReq.Status.TargetClusterID, "new", newTarget)
+
+				// 1. Delete old instruction to trigger teardown
+				ns := r.InstructionNamespace
+				if ns == "" {
+					ns = resourceReq.Namespace
+				}
+				oldInstruction := &rearv1alpha1.ReservationInstruction{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      resourceReq.Status.ReservationName,
+						Namespace: ns,
+					},
+				}
+
+				if err := r.Delete(ctx, oldInstruction); err != nil && !apierrors.IsNotFound(err) {
+					logger.Error(err, "Failed to delete old instruction")
+				}
+
+				// 2. Set phase to Pending so we request a new reservation
+				return r.updateStatus(ctx, resourceReq, "Pending", "", "", "Switching to a better provider: "+newTarget)
+			}
+		}
+		return ctrl.Result{RequeueAfter: reEvalInterval}, nil
+	}
+
+	if resourceReq.Status.Phase == "Failed" {
 		return ctrl.Result{}, nil
 	}
 
@@ -69,23 +156,53 @@ func (r *ResourceRequestReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Send synchronous reservation request to broker
-	reservationReq := &dto.ReservationRequestDTO{
+	// Phase 1: Evaluate providers to get the ranked list
+	evalReq := &dto.ReservationRequestDTO{
 		RequestedResources: dto.ResourceQuantitiesDTO{
 			CPU:    resourceReq.Spec.RequestedCPU,
 			Memory: resourceReq.Spec.RequestedMemory,
+			GPU:    resourceReq.Spec.RequestedGPU,
 		},
 		Priority: resourceReq.Spec.Priority,
 		Duration: resourceReq.Spec.Duration,
 	}
 
-	reservation, err := r.BrokerCommunicator.RequestReservation(ctx, reservationReq)
+	loc, err := geo.GetLocation(r.MockGeoURL, r.ClusterID, r.ForcedGeoIP)
 	if err != nil {
-		logger.Error(err, "Reservation request failed",
+		logger.Error(err, "Failed to get geo location")
+	} else if loc != nil {
+		evalReq.Location = loc
+	}
+
+	evaluation, err := r.BrokerCommunicator.EvaluateProviders(ctx, evalReq)
+	if err != nil {
+		logger.Error(err, "Provider evaluation failed",
 			"cpu", resourceReq.Spec.RequestedCPU,
 			"memory", resourceReq.Spec.RequestedMemory)
 		return r.updateStatus(ctx, resourceReq, "Failed", "", "",
-			fmt.Sprintf("Reservation request failed: %v", err))
+			fmt.Sprintf("Provider evaluation failed: %v", err))
+	}
+
+	if len(evaluation.CandidateClusters) == 0 {
+		logger.Info("No suitable provider found")
+		return r.updateStatus(ctx, resourceReq, "Failed", "", "",
+			"No suitable provider found")
+	}
+
+	// For simplicity, we just pick the first (best) candidate from the list
+	bestCandidate := evaluation.CandidateClusters[0].ClusterID
+	logger.Info("Evaluation complete", "candidates", evaluation.CandidateClusters, "selected", bestCandidate)
+
+	// Phase 2: Send synchronous reservation request for the specific target
+	evalReq.TargetClusterID = bestCandidate
+	reservation, err := r.BrokerCommunicator.RequestReservation(ctx, evalReq)
+	if err != nil {
+		logger.Error(err, "Reservation request failed",
+			"target", bestCandidate,
+			"cpu", resourceReq.Spec.RequestedCPU,
+			"memory", resourceReq.Spec.RequestedMemory)
+		return r.updateStatus(ctx, resourceReq, "Failed", bestCandidate, "",
+			fmt.Sprintf("Reservation request to %s failed: %v", bestCandidate, err))
 	}
 
 	// Create ReservationInstruction from the response
@@ -141,10 +258,12 @@ func (r *ResourceRequestReconciler) createReservationInstruction(
 			TargetClusterID: reservation.TargetClusterID,
 			RequestedCPU:    reservation.RequestedResources.CPU,
 			RequestedMemory: reservation.RequestedResources.Memory,
-			Message: fmt.Sprintf("Use %s for %s CPU / %s Memory",
+			RequestedGPU:    reservation.RequestedResources.GPU,
+			Message: fmt.Sprintf("Use %s for %s CPU / %s Memory / %s GPU",
 				reservation.TargetClusterID,
 				reservation.RequestedResources.CPU,
-				reservation.RequestedResources.Memory),
+				reservation.RequestedResources.Memory,
+				reservation.RequestedResources.GPU),
 			ExpiresAt: expiresAt,
 		},
 	}
@@ -157,13 +276,22 @@ func (r *ResourceRequestReconciler) updateStatus(
 	resourceReq *rearv1alpha1.ResourceRequest,
 	phase, targetClusterID, reservationName, message string,
 ) (ctrl.Result, error) {
-	resourceReq.Status.Phase = phase
-	resourceReq.Status.TargetClusterID = targetClusterID
-	resourceReq.Status.ReservationName = reservationName
-	resourceReq.Status.Message = message
-	resourceReq.Status.LastUpdateTime = metav1.Now()
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &rearv1alpha1.ResourceRequest{}
+		if err := r.Get(ctx, types.NamespacedName{Name: resourceReq.Name, Namespace: resourceReq.Namespace}, latest); err != nil {
+			return err
+		}
 
-	if err := r.Status().Update(ctx, resourceReq); err != nil {
+		latest.Status.Phase = phase
+		latest.Status.TargetClusterID = targetClusterID
+		latest.Status.ReservationName = reservationName
+		latest.Status.Message = message
+		latest.Status.LastUpdateTime = metav1.Now()
+
+		return r.Status().Update(ctx, latest)
+	})
+
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil

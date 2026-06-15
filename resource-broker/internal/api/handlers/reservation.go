@@ -65,18 +65,64 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run decision engine synchronously
-	bestCluster, err := h.decisionEngine.SelectBestCluster(
-		ctx, requesterID, requestedCPU, requestedMemory, reqDTO.Priority,
-	)
-	if err != nil {
-		logger.Error(err, "No suitable cluster found",
-			"requesterID", requesterID,
-			"requestedCPU", requestedCPU.String(),
-			"requestedMemory", requestedMemory.String())
-		respondWithError(w, http.StatusConflict,
-			fmt.Sprintf("No suitable cluster found: %v", err))
-		return
+	var requestedGPU *resource.Quantity
+	if reqDTO.RequestedResources.GPU != "" {
+		gpuParsed, err := resource.ParseQuantity(reqDTO.RequestedResources.GPU)
+		if err == nil && gpuParsed.Sign() > 0 {
+			requestedGPU = &gpuParsed
+		}
+	}
+
+	var bestCluster *brokerv1alpha1.ClusterAdvertisement
+
+	if reqDTO.TargetClusterID != "" {
+		// Specific cluster requested
+		clusterAdvList := &brokerv1alpha1.ClusterAdvertisementList{}
+		if err := h.k8sClient.List(ctx, clusterAdvList); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to list cluster advertisements")
+			return
+		}
+
+		for i := range clusterAdvList.Items {
+			if clusterAdvList.Items[i].Spec.ClusterID == reqDTO.TargetClusterID {
+				if clusterAdvList.Items[i].Status.Active {
+					bestCluster = &clusterAdvList.Items[i]
+				}
+				break
+			}
+		}
+
+		if bestCluster == nil {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Target cluster %s not found or inactive", reqDTO.TargetClusterID))
+			return
+		}
+	} else {
+		// Get requester policy
+		policy := ""
+		advList := &brokerv1alpha1.ClusterAdvertisementList{}
+		if err := h.k8sClient.List(ctx, advList); err == nil {
+			for i := range advList.Items {
+				if advList.Items[i].Spec.ClusterID == requesterID {
+					policy = advList.Items[i].Spec.Policy
+					break
+				}
+			}
+		}
+
+		// Run decision engine synchronously
+		bestClusters, err := h.decisionEngine.RankClusters(
+			ctx, requesterID, requestedCPU, requestedMemory, requestedGPU, reqDTO.Priority, 1, policy,
+		)
+		if err != nil || len(bestClusters) == 0 {
+			logger.Error(err, "No suitable cluster found",
+				"requesterID", requesterID,
+				"requestedCPU", requestedCPU.String(),
+				"requestedMemory", requestedMemory.String())
+			respondWithError(w, http.StatusConflict,
+				fmt.Sprintf("No suitable cluster found: %v", err))
+			return
+		}
+		bestCluster = bestClusters[0].Cluster
 	}
 
 	// Generate reservation name
@@ -148,28 +194,45 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 	if lockErr != nil {
 		logger.Error(lockErr, "Failed to lock resources")
 		// Mark reservation as failed
-		reservation.Status.Phase = brokerv1alpha1.ReservationPhaseFailed
-		reservation.Status.Message = fmt.Sprintf("Failed to lock resources: %v", lockErr)
-		reservation.Status.LastUpdateTime = metav1.Now()
-		_ = h.k8sClient.Status().Update(ctx, reservation)
+		_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest := &brokerv1alpha1.Reservation{}
+			if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservation.Name, Namespace: reservation.Namespace}, latest); err != nil {
+				return err
+			}
+			latest.Status.Phase = brokerv1alpha1.ReservationPhaseFailed
+			latest.Status.Message = fmt.Sprintf("Failed to lock resources: %v", lockErr)
+			latest.Status.LastUpdateTime = metav1.Now()
+			return h.k8sClient.Status().Update(ctx, latest)
+		})
 
 		respondWithError(w, http.StatusConflict, fmt.Sprintf("Failed to reserve resources: %v", lockErr))
 		return
 	}
 
-	// Mark reservation as Reserved
-	now := metav1.Now()
-	reservation.Status.Phase = brokerv1alpha1.ReservationPhaseReserved
-	reservation.Status.Message = fmt.Sprintf("Resources locked in cluster %s", bestCluster.Spec.ClusterID)
-	reservation.Status.ReservedAt = &now
-	reservation.Status.LastUpdateTime = now
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &brokerv1alpha1.Reservation{}
+		if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservation.Name, Namespace: reservation.Namespace}, latest); err != nil {
+			return err
+		}
 
-	if reservation.Spec.Duration != nil {
-		expiresAt := metav1.NewTime(now.Add(reservation.Spec.Duration.Duration))
-		reservation.Status.ExpiresAt = &expiresAt
-	}
+		latest.Status.Phase = brokerv1alpha1.ReservationPhaseReserved
+		latest.Status.Message = fmt.Sprintf("Resources locked in cluster %s", bestCluster.Spec.ClusterID)
+		now := metav1.Now()
+		latest.Status.ReservedAt = &now
+		latest.Status.LastUpdateTime = now
 
-	if err := h.k8sClient.Status().Update(ctx, reservation); err != nil {
+		if latest.Spec.Duration != nil {
+			expiresAt := metav1.NewTime(now.Add(latest.Spec.Duration.Duration))
+			latest.Status.ExpiresAt = &expiresAt
+		}
+
+		err := h.k8sClient.Status().Update(ctx, latest)
+		if err == nil {
+			// Update local object for the JSON response
+			reservation.Status = latest.Status
+		}
+		return err
+	}); err != nil {
 		logger.Error(err, "Failed to update reservation status")
 	}
 
@@ -186,6 +249,113 @@ func (h *Handler) PostReservation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Error(err, "Failed to encode response")
+	}
+}
+
+// PostPeeringKubeconfig handles POST /api/v1/reservations/{id}/kubeconfig
+// The provider agent uploads the peering kubeconfig for the requester cluster.
+func (h *Handler) PostPeeringKubeconfig(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx).WithName("reservation-handler")
+
+	reservationID := r.PathValue("id")
+	if reservationID == "" {
+		respondWithError(w, http.StatusBadRequest, "Missing reservation id parameter")
+		return
+	}
+
+	// Get provider ID from mTLS certificate
+	providerID, ok := middleware.GetClusterID(ctx)
+	if !ok || providerID == "" {
+		respondWithError(w, http.StatusForbidden, "Could not determine cluster ID from certificate")
+		return
+	}
+
+	var payload struct {
+		Kubeconfig string `json:"kubeconfig"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		logger.Error(err, "Failed to decode request body")
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if payload.Kubeconfig == "" {
+		respondWithError(w, http.StatusBadRequest, "Kubeconfig cannot be empty")
+		return
+	}
+
+	// Fetch the reservation
+	reservation := &brokerv1alpha1.Reservation{}
+	if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservationID, Namespace: h.namespace}, reservation); err != nil {
+		if apierrors.IsNotFound(err) {
+			respondWithError(w, http.StatusNotFound, "Reservation not found")
+		} else {
+			logger.Error(err, "Failed to fetch reservation")
+			respondWithError(w, http.StatusInternalServerError, "Internal server error")
+		}
+		return
+	}
+
+	// Verify that the calling cluster is indeed the target provider
+	if reservation.Spec.TargetClusterID != providerID {
+		logger.Error(nil, "Unauthorized kubeconfig upload",
+			"expectedProvider", reservation.Spec.TargetClusterID,
+			"actualProvider", providerID)
+		respondWithError(w, http.StatusForbidden, "Only the assigned provider can upload the peering kubeconfig")
+		return
+	}
+
+	// Update reservation status with the credential
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &brokerv1alpha1.Reservation{}
+		if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservation.Name, Namespace: reservation.Namespace}, latest); err != nil {
+			return err
+		}
+		latest.Status.PeeringKubeconfig = payload.Kubeconfig
+		latest.Status.LastUpdateTime = metav1.Now()
+		return h.k8sClient.Status().Update(ctx, latest)
+	}); err != nil {
+		logger.Error(err, "Failed to update reservation status with peering kubeconfig")
+		respondWithError(w, http.StatusInternalServerError, "Failed to save peering kubeconfig")
+		return
+	}
+
+	logger.Info("Successfully saved peering kubeconfig", "reservationID", reservationID, "providerID", providerID)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"success"}`))
+}
+
+// GetReservation handles GET /api/v1/reservations/{id}
+func (h *Handler) GetReservation(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.FromContext(ctx).WithName("reservation-handler")
+
+	reservationID := r.PathValue("id")
+	if reservationID == "" {
+		respondWithError(w, http.StatusBadRequest, "Missing reservation id parameter")
+		return
+	}
+
+	// Fetch reservation
+	reservation := &brokerv1alpha1.Reservation{}
+	if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: reservationID, Namespace: h.namespace}, reservation); err != nil {
+		if apierrors.IsNotFound(err) {
+			respondWithError(w, http.StatusNotFound, "Reservation not found")
+		} else {
+			logger.Error(err, "Failed to fetch reservation")
+			respondWithError(w, http.StatusInternalServerError, "Internal server error")
+		}
+		return
+	}
+
+	// Convert to DTO
+	responseDTO := dto.FromReservation(reservation)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(responseDTO); err != nil {
 		logger.Error(err, "Failed to encode response")
 	}
 }

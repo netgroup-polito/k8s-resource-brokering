@@ -29,9 +29,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	rearv1alpha1 "github.com/mehdiazizian/liqo-resource-agent/api/v1alpha1"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/eco"
+	"github.com/mehdiazizian/liqo-resource-agent/internal/geo"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/metrics"
 	"github.com/mehdiazizian/liqo-resource-agent/internal/publisher" // ← Add this line
 	"github.com/mehdiazizian/liqo-resource-agent/internal/transport"
@@ -49,6 +52,12 @@ type AdvertisementReconciler struct {
 	TargetKey            types.NamespacedName
 	RequeueInterval      time.Duration // Configurable requeue interval
 	InstructionNamespace string        // Namespace for ProviderInstruction CRDs
+	Renewable            bool          // Green energy flag
+	EnergyCost           float64       // Normalized cost (0-1)
+	MockGeoURL           string        // URL for the mock-geo service
+	MockEcoURL           string        // URL for the mock-eco carbon intensity service
+	ForcedGeoIP          string        // Optional forced IP for geolocation
+	AgentRole            string        // Role of the agent (requester or provider)
 }
 
 // +kubebuilder:rbac:groups=rear.fluidos.eu,resources=advertisements,verbs=get;list;watch;create;update;patch;delete
@@ -80,11 +89,23 @@ func (r *AdvertisementReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Collect current cluster metrics
-	resourceData, err := r.MetricsCollector.CollectClusterResources(ctx)
-	if err != nil {
-		logger.Error(err, "failed to collect cluster resources")
-		return r.updateStatus(ctx, advertisement, "Error", false, fmt.Sprintf("Failed to collect metrics: %v", err))
+	// Collect current cluster metrics (or zero them if requester)
+	var resourceData *rearv1alpha1.ResourceMetrics
+	if r.AgentRole == "requester" {
+		zeroQuantities := rearv1alpha1.ResourceQuantities{}
+		resourceData = &rearv1alpha1.ResourceMetrics{
+			Capacity:    zeroQuantities,
+			Allocatable: zeroQuantities,
+			Allocated:   zeroQuantities,
+			Available:   zeroQuantities,
+		}
+	} else {
+		var err error
+		resourceData, err = r.MetricsCollector.CollectClusterResources(ctx)
+		if err != nil {
+			logger.Error(err, "failed to collect cluster resources")
+			return r.updateStatus(ctx, advertisement, "Error", false, fmt.Sprintf("Failed to collect metrics: %v", err))
+		}
 	}
 
 	// Get cluster ID
@@ -94,17 +115,37 @@ func (r *AdvertisementReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.updateStatus(ctx, advertisement, "Error", false, fmt.Sprintf("Failed to get cluster ID: %v", err))
 	}
 
+	// Keep a copy of the old spec to check if we need to update
+	oldSpec := advertisement.Spec.DeepCopy()
+
 	// Update the Advertisement spec with collected data
 	advertisement.Spec.ClusterID = clusterID
 	advertisement.Spec.Resources = *resourceData
-	advertisement.Spec.Timestamp = metav1.Now()
 
-	// Update the Advertisement resource
-	if err := r.Update(ctx, advertisement); err != nil {
-		logger.Error(err, "failed to update advertisement spec",
-			"name", advertisement.Name,
-			"namespace", advertisement.Namespace)
-		return ctrl.Result{}, err
+	// Update cost information
+	advertisement.Spec.Cost = &rearv1alpha1.CostInfo{
+		Renewable:  r.Renewable,
+		EnergyCost: r.EnergyCost,
+	}
+
+	// Only update if there are actual changes
+	specChanged := advertisement.Spec.ClusterID != oldSpec.ClusterID ||
+		oldSpec.Cost == nil ||
+		advertisement.Spec.Cost.Renewable != oldSpec.Cost.Renewable ||
+		advertisement.Spec.Cost.EnergyCost != oldSpec.Cost.EnergyCost ||
+		!advertisement.Spec.Resources.Allocatable.CPU.Equal(oldSpec.Resources.Allocatable.CPU) ||
+		!advertisement.Spec.Resources.Allocatable.Memory.Equal(oldSpec.Resources.Allocatable.Memory) ||
+		!advertisement.Spec.Resources.Available.CPU.Equal(oldSpec.Resources.Available.CPU) ||
+		!advertisement.Spec.Resources.Available.Memory.Equal(oldSpec.Resources.Available.Memory)
+
+	if specChanged {
+		advertisement.Spec.Timestamp = metav1.Now()
+		if err := r.Update(ctx, advertisement); err != nil {
+			logger.Error(err, "failed to update advertisement spec",
+				"name", advertisement.Name,
+				"namespace", advertisement.Namespace)
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Log with better readability - single message with newlines
@@ -138,6 +179,26 @@ func (r *AdvertisementReconciler) publishToBroker(ctx context.Context, advertise
 
 	if r.BrokerCommunicator != nil {
 		advDTO := dto.ToAdvertisementDTO(advertisement)
+		
+		// Add geo location if available
+		loc, err := geo.GetLocation(r.MockGeoURL, clusterID, r.ForcedGeoIP)
+		if err != nil {
+			logger.Error(err, "Failed to get geo location, continuing without it")
+		} else if loc != nil {
+			advDTO.Location = loc
+		}
+
+		// Add carbon intensity forecast if available
+		if loc != nil && loc.Region != "" {
+			carbonData, err := eco.GetCarbonForecast(r.MockEcoURL, loc.Region)
+			if err != nil {
+				logger.Error(err, "Failed to get carbon forecast, continuing without it")
+			} else if carbonData != nil {
+				advDTO.CarbonIntensity = carbonData.CarbonIntensity
+				advDTO.CarbonLastUpdate = &carbonData.LastUpdate
+			}
+		}
+
 		providerInstructions, err := r.BrokerCommunicator.PublishAdvertisement(ctx, advDTO)
 		if err != nil {
 			logger.Error(err, fmt.Sprintf("Failed to publish to broker (will retry)\n  Cluster: %s", clusterID))
@@ -200,9 +261,11 @@ func (r *AdvertisementReconciler) processProviderInstructions(ctx context.Contex
 				RequesterClusterID: rsv.RequesterID,
 				RequestedCPU:       rsv.RequestedResources.CPU,
 				RequestedMemory:    rsv.RequestedResources.Memory,
-				Message: fmt.Sprintf("Hold %s CPU / %s Memory for requester %s",
+				RequestedGPU:       rsv.RequestedResources.GPU,
+				Message: fmt.Sprintf("Hold %s CPU / %s Memory / %s GPU for requester %s",
 					rsv.RequestedResources.CPU,
 					rsv.RequestedResources.Memory,
+					rsv.RequestedResources.GPU,
 					rsv.RequesterID),
 				ExpiresAt: expiresAt,
 			},
@@ -232,17 +295,19 @@ func (r *AdvertisementReconciler) updateStatus(
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	advertisement.Status.Phase = phase
-	advertisement.Status.Published = published
-	advertisement.Status.Message = message
-	advertisement.Status.LastUpdateTime = metav1.Now()
+	if advertisement.Status.Phase != phase || advertisement.Status.Published != published || advertisement.Status.Message != message {
+		advertisement.Status.Phase = phase
+		advertisement.Status.Published = published
+		advertisement.Status.Message = message
+		advertisement.Status.LastUpdateTime = metav1.Now()
 
-	if err := r.Status().Update(ctx, advertisement); err != nil {
-		logger.Error(err, "failed to update advertisement status",
-			"name", advertisement.Name,
-			"namespace", advertisement.Namespace,
-			"phase", phase)
-		return ctrl.Result{}, err
+		if err := r.Status().Update(ctx, advertisement); err != nil {
+			logger.Error(err, "failed to update advertisement status",
+				"name", advertisement.Name,
+				"namespace", advertisement.Namespace,
+				"phase", phase)
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Schedule next advertisement with jitter to avoid thundering herd
@@ -279,6 +344,7 @@ func (r *AdvertisementReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Pod{},
 			handler.EnqueueRequestsFromMapFunc(r.findAdvertisementsForPod),
 		).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Named("advertisement").
 		Complete(r)
 }

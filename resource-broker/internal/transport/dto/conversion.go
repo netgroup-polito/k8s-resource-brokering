@@ -45,7 +45,31 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 				Available:   available,
 				// Reserved: will be preserved from existing if present
 			},
+			Policy: dto.Policy,
 		},
+	}
+
+	//Correctly saves in the ClusterAdvertisement CRD the cost information
+	if dto.Cost != nil {
+		clusterAdv.Spec.Cost = &brokerv1alpha1.CostInfo{
+			Renewable:  dto.Cost.Renewable,
+			EnergyCost: dto.Cost.EnergyCost,
+		}
+	}
+
+	if dto.Location != nil {
+		clusterAdv.Spec.Location = &brokerv1alpha1.LocationInfo{
+			ContinentCode: dto.Location.ContinentCode,
+			CountryCode:   dto.Location.CountryCode,
+			Region:        dto.Location.Region,
+			RegionName:    dto.Location.RegionName,
+			City:          dto.Location.City,
+			Lat:           dto.Location.Lat,
+			Lon:           dto.Location.Lon,
+			ISP:           dto.Location.ISP,
+			Org:           dto.Location.Org,
+			AS:            dto.Location.AS,
+		}
 	}
 
 	// CRITICAL: Preserve Reserved field from DTO if present (broker-managed)
@@ -55,6 +79,14 @@ func ToClusterAdvertisement(dto *AdvertisementDTO, namespace string) (*brokerv1a
 			return nil, err
 		}
 		clusterAdv.Spec.Resources.Reserved = &reserved
+	}
+
+	// Include CarbonIntensity if provided by the agent
+	if len(dto.CarbonIntensity) > 0 {
+		clusterAdv.Spec.CarbonIntensity = dto.CarbonIntensity
+		if dto.CarbonLastUpdate != nil {
+			clusterAdv.Spec.CarbonLastUpdate = metav1.Time{Time: *dto.CarbonLastUpdate}
+		}
 	}
 
 	return clusterAdv, nil
@@ -72,12 +104,44 @@ func FromClusterAdvertisement(clusterAdv *brokerv1alpha1.ClusterAdvertisement) *
 			Allocated:   toResourceQuantitiesDTO(clusterAdv.Spec.Resources.Allocated),
 			Available:   toResourceQuantitiesDTO(clusterAdv.Spec.Resources.Available),
 		},
+		Policy: clusterAdv.Spec.Policy,
+	}
+
+	if clusterAdv.Spec.Cost != nil {
+		dto.Cost = &CostInfoDTO{
+			Renewable:  clusterAdv.Spec.Cost.Renewable,
+			EnergyCost: clusterAdv.Spec.Cost.EnergyCost,
+		}
+	}
+
+	if clusterAdv.Spec.Location != nil {
+		dto.Location = &LocationDTO{
+			ContinentCode: clusterAdv.Spec.Location.ContinentCode,
+			CountryCode:   clusterAdv.Spec.Location.CountryCode,
+			Region:        clusterAdv.Spec.Location.Region,
+			RegionName:    clusterAdv.Spec.Location.RegionName,
+			City:          clusterAdv.Spec.Location.City,
+			Lat:           clusterAdv.Spec.Location.Lat,
+			Lon:           clusterAdv.Spec.Location.Lon,
+			ISP:           clusterAdv.Spec.Location.ISP,
+			Org:           clusterAdv.Spec.Location.Org,
+			AS:            clusterAdv.Spec.Location.AS,
+		}
 	}
 
 	// CRITICAL: Include Reserved field if present (broker-managed)
 	if clusterAdv.Spec.Resources.Reserved != nil {
 		reserved := toResourceQuantitiesDTO(*clusterAdv.Spec.Resources.Reserved)
 		dto.Resources.Reserved = &reserved
+	}
+
+	// Include CarbonIntensity if present
+	if len(clusterAdv.Spec.CarbonIntensity) > 0 {
+		dto.CarbonIntensity = clusterAdv.Spec.CarbonIntensity
+		if !clusterAdv.Spec.CarbonLastUpdate.IsZero() {
+			t := clusterAdv.Spec.CarbonLastUpdate.Time
+			dto.CarbonLastUpdate = &t
+		}
 	}
 
 	return dto
@@ -94,8 +158,9 @@ func FromReservation(rsv *brokerv1alpha1.Reservation) *ReservationDTO {
 			Memory: rsv.Spec.RequestedResources.Memory.String(),
 		},
 		Status: ReservationStatusDTO{
-			Phase:   string(rsv.Status.Phase),
-			Message: rsv.Status.Message,
+			Phase:             string(rsv.Status.Phase),
+			Message:           rsv.Status.Message,
+			PeeringKubeconfig: rsv.Status.PeeringKubeconfig,
 		},
 		CreatedAt: rsv.CreationTimestamp.Time,
 	}

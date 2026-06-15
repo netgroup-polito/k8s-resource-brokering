@@ -14,35 +14,31 @@ type ResourceRequestSpec struct {
 	// RequestedMemory is the memory quantity to request (e.g., "256Mi", "1Gi").
 	RequestedMemory string `json:"requestedMemory"`
 
+	// RequestedGPU is the GPU quantity to request (e.g., "1", "2").
+	RequestedGPU string `json:"requestedGPU,omitempty"`
+
 	// Priority of this request (higher number = higher priority).
-	// +optional
 	Priority int32 `json:"priority,omitempty"`
 
 	// Duration is how long the reservation should last (e.g., "1h", "30m").
-	// +optional
 	Duration string `json:"duration,omitempty"`
 }
 
 // ResourceRequestStatus defines the observed state of ResourceRequest.
 type ResourceRequestStatus struct {
 	// Phase represents the current state: Pending, Reserved, Failed.
-	// +optional
 	Phase string `json:"phase,omitempty"`
 
 	// TargetClusterID is the cluster selected by the broker.
-	// +optional
 	TargetClusterID string `json:"targetClusterID,omitempty"`
 
 	// ReservationName is the broker-side reservation ID.
-	// +optional
 	ReservationName string `json:"reservationName,omitempty"`
 
 	// Message provides additional information about the status.
-	// +optional
 	Message string `json:"message,omitempty"`
 
 	// LastUpdateTime records the last status update.
-	// +optional
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 }
 

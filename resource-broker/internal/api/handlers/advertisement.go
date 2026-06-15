@@ -13,6 +13,7 @@ import (
 	brokerv1alpha1 "github.com/mehdiazizian/liqo-resource-broker/api/v1alpha1"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/api/middleware"
 	"github.com/mehdiazizian/liqo-resource-broker/internal/transport/dto"
+	k8sretry "k8s.io/client-go/util/retry"
 )
 
 // PostAdvertisement handles POST /api/v1/advertisements
@@ -56,26 +57,76 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 
 	if err == nil {
 		// Advertisement exists - CRITICAL: Preserve Reserved field
-		if existing.Spec.Resources.Reserved != nil {
-			logger.Info("Preserving Reserved field from existing advertisement",
-				"cpu", existing.Spec.Resources.Reserved.CPU.String(),
-				"memory", existing.Spec.Resources.Reserved.Memory.String())
-			clusterAdv.Spec.Resources.Reserved = existing.Spec.Resources.Reserved
-		}
+		importRetry := true
+		_ = importRetry // Just to note that we might need to add retry import if not present
 
-		// Update existing advertisement
-		clusterAdv.ResourceVersion = existing.ResourceVersion
-		if err := h.k8sClient.Update(ctx, clusterAdv); err != nil {
-			logger.Error(err, "Failed to update advertisement")
+		// We will use retry on conflict here
+		err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			// Re-fetch the latest advertisement
+			latest := &brokerv1alpha1.ClusterAdvertisement{}
+			if err := h.k8sClient.Get(ctx, types.NamespacedName{Name: advName, Namespace: h.namespace}, latest); err != nil {
+				return err
+			}
+
+			// Keep a copy of the old reserved field
+			var reserved *brokerv1alpha1.ResourceQuantities
+			if latest.Spec.Resources.Reserved != nil {
+				reserved = latest.Spec.Resources.Reserved
+			}
+
+			// Keep a copy of the old policy field
+			oldPolicy := latest.Spec.Policy
+
+			// Keep a copy of the old carbon intensity data (broker-managed)
+			oldCarbonIntensity := latest.Spec.CarbonIntensity
+			oldCarbonLastUpdate := latest.Spec.CarbonLastUpdate
+
+			// Convert DTO to k8s ClusterAdvertisement
+			clusterAdvRetry, err2 := dto.ToClusterAdvertisement(&incomingAdv, h.namespace)
+			if err2 != nil {
+				return err2
+			}
+
+			// Apply new spec but preserve the old reserved and policy fields
+			latest.Spec = clusterAdvRetry.Spec
+			latest.Spec.Resources.Reserved = reserved
+			latest.Spec.Policy = oldPolicy
+
+			// Preserve broker-managed CarbonIntensity if the agent didn't send its own
+			if len(latest.Spec.CarbonIntensity) == 0 && len(oldCarbonIntensity) > 0 {
+				latest.Spec.CarbonIntensity = oldCarbonIntensity
+				latest.Spec.CarbonLastUpdate = oldCarbonLastUpdate
+			}
+
+			// CRITICAL: Subtract Reserved from the Agent's reported Available to prevent
+			// over-allocation in the window before the Agent enforces the instruction!
+			if reserved != nil {
+				latest.Spec.Resources.Available.CPU.Sub(reserved.CPU)
+				latest.Spec.Resources.Available.Memory.Sub(reserved.Memory)
+				if reserved.GPU != nil && latest.Spec.Resources.Available.GPU != nil {
+					latest.Spec.Resources.Available.GPU.Sub(*reserved.GPU)
+				}
+			}
+
+			return h.k8sClient.Update(ctx, latest)
+		})
+
+		if err != nil {
+			logger.Error(err, "Failed to update advertisement after retries")
 			http.Error(w, fmt.Sprintf("Failed to update advertisement: %v", err),
 				http.StatusInternalServerError)
 			return
 		}
 
+		locStr := "N/A"
+		if incomingAdv.Location != nil {
+			locStr = fmt.Sprintf("%+v", *incomingAdv.Location)
+		}
 		logger.Info("Updated advertisement",
 			"clusterID", incomingAdv.ClusterID,
 			"availableCPU", incomingAdv.Resources.Available.CPU,
-			"availableMemory", incomingAdv.Resources.Available.Memory)
+			"availableMemory", incomingAdv.Resources.Available.Memory,
+			"location", locStr)
 
 	} else if apierrors.IsNotFound(err) {
 		// Advertisement doesn't exist - create new
@@ -86,10 +137,15 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		locStr := "N/A"
+		if incomingAdv.Location != nil {
+			locStr = fmt.Sprintf("%+v", *incomingAdv.Location)
+		}
 		logger.Info("Created new advertisement",
 			"clusterID", incomingAdv.ClusterID,
 			"availableCPU", incomingAdv.Resources.Available.CPU,
-			"availableMemory", incomingAdv.Resources.Available.Memory)
+			"availableMemory", incomingAdv.Resources.Available.Memory,
+			"location", locStr)
 
 	} else {
 		// Unexpected error

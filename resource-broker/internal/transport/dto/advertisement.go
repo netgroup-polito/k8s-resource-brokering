@@ -5,10 +5,40 @@ import "time"
 // AdvertisementDTO is a protocol-agnostic representation of cluster advertisement
 // It decouples business logic from transport protocol (HTTP, Kubernetes CRDs, etc.)
 type AdvertisementDTO struct {
-	ClusterID   string             `json:"clusterID"`
-	ClusterName string             `json:"clusterName"`
-	Resources   ResourceMetricsDTO `json:"resources"`
-	Timestamp   time.Time          `json:"timestamp"`
+	ClusterID       string             `json:"clusterID"`
+	ClusterName     string             `json:"clusterName"`
+	Resources       ResourceMetricsDTO `json:"resources"`
+	Cost            *CostInfoDTO       `json:"cost,omitempty"`
+	Location        *LocationDTO       `json:"location,omitempty"`
+	Policy          string             `json:"policy,omitempty"`
+	Timestamp       time.Time          `json:"timestamp"`
+
+	// CarbonIntensity is the 24-hour carbon intensity forecast (gCO2eq/kWh) for this cluster's region.
+	// Optional: if provided by the agent, the broker will use it directly instead of fetching from mock-eco.
+	CarbonIntensity []int `json:"carbonIntensity,omitempty"`
+
+	// CarbonLastUpdate is when the carbon intensity data was last refreshed by the agent.
+	CarbonLastUpdate *time.Time `json:"carbonLastUpdate,omitempty"`
+}
+
+// LocationDTO represents geographic location information
+type LocationDTO struct {
+	ContinentCode string  `json:"continentCode"`
+	CountryCode   string  `json:"countryCode"`
+	Region        string  `json:"region"`
+	RegionName    string  `json:"regionName"`
+	City          string  `json:"city"`
+	Lat           float64 `json:"lat"`
+	Lon           float64 `json:"lon"`
+	ISP           string  `json:"isp"`
+	Org           string  `json:"org"`
+	AS            string  `json:"as"`
+}
+
+// CostInfoDTO represents cost information in a protocol-agnostic way
+type CostInfoDTO struct {
+	Renewable  bool    `json:"renewable"`
+	EnergyCost float64 `json:"energyCost"`
 }
 
 // ResourceMetricsDTO represents resource metrics in a protocol-agnostic way

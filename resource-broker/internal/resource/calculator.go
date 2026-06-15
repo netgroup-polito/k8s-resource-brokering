@@ -45,8 +45,9 @@ func AddReservation(
 	clusterAdv.Spec.Resources.Reserved.CPU.Add(cpuToReserve)
 	clusterAdv.Spec.Resources.Reserved.Memory.Add(memoryToReserve)
 
-	// Recalculate available using single source of truth
-	UpdateAvailableResources(&clusterAdv.Spec.Resources)
+	// Directly subtract from available to preserve agent's sharing logic
+	clusterAdv.Spec.Resources.Available.CPU.Sub(cpuToReserve)
+	clusterAdv.Spec.Resources.Available.Memory.Sub(memoryToReserve)
 
 	return nil
 }
@@ -64,8 +65,9 @@ func RemoveReservation(
 	clusterAdv.Spec.Resources.Reserved.CPU.Sub(cpuToRelease)
 	clusterAdv.Spec.Resources.Reserved.Memory.Sub(memoryToRelease)
 
-	// Recalculate available using single source of truth
-	UpdateAvailableResources(&clusterAdv.Spec.Resources)
+	// Directly add to available to preserve agent's sharing logic
+	clusterAdv.Spec.Resources.Available.CPU.Add(cpuToRelease)
+	clusterAdv.Spec.Resources.Available.Memory.Add(memoryToRelease)
 
 	return nil
 }

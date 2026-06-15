@@ -7,9 +7,9 @@ A centralized resource brokerage system that enables Kubernetes clusters to shar
 ```
  Requester Cluster              Broker Cluster              Provider Cluster
 ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐
-│  Agent            │  mTLS   │  REST API (mTLS) │  mTLS   │           Agent  │
+│  Agent           │  mTLS   │  REST API (mTLS) │  mTLS   │           Agent  │
 │  ┌──────────────┐│         │  ┌──────────────┐│         │┌──────────────┐  │
-│  │Metrics       ││────────►│  │ClusterAdverts ││◄────────││Metrics       │  │
+│  │Metrics       ││────────►│  │ClusterAdverts││◄────────││Metrics       │  │
 │  │Collector     ││ publish │  │              ││ publish ││Collector     │  │
 │  └──────────────┘│ every   │  ├──────────────┤│ every   │└──────────────┘  │
 │                  │  30s    │  │Decision      ││  30s    │                  │
@@ -19,14 +19,14 @@ A centralized resource brokerage system that enables Kubernetes clusters to shar
 │  └──────────────┘│ /reser- │         │        │         │└──────┬───────┘  │
 │         │        │ vations │         ▼        │         │       │          │
 │         ▼        │         │  ┌──────────────┐│  GET    │       │(polls    │
-│  ┌──────────────┐│◄────────│  │Reservations  ││◄────────│  every 5s)      │
-│  │Reservation   ││ instant │  │+ Instructions││ /instr. │                  │
+│  ┌──────────────┐│◄────────│  │Reservations  ││◄────────│───────  every    │
+│  │Reservation   ││ instant │  │+ Instructions││ /instr. │         5s)      │
 │  │Instruction   ││ (in HTTP│  └──────────────┘│         │                  │
-│  └──────┬───────┘│ response│                  │         │                  │
-│         │        │    )    │                  │         │                  │
+│  └──────┬───────┘│response)│                  │         │                  │
+│         │        │         │                  │         │                  │
 │         ▼        │         │                  │         │                  │
 │  ┌──────────────┐│         │                  │         │                  │
-│  │Liqo Peering  │╞═══════════════WireGuard═══════════════╡                  │
+│  │Liqo Peering  │╞══════════════WireGuard═══════════════╡                  │
 │  │Virtual Node  ││         │                  │         │                  │
 │  └──────────────┘│         │                  │         │                  │
 └──────────────────┘         └──────────────────┘         └──────────────────┘
