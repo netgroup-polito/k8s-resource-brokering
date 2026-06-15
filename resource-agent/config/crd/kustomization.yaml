@@ -5,6 +5,7 @@ resources:
 - bases/rear.fluidos.eu_advertisements.yaml
 - bases/rear.fluidos.eu_providerinstructions.yaml
 - bases/rear.fluidos.eu_reservationinstructions.yaml
+- bases/rear.fluidos.eu_resourcerequests.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
