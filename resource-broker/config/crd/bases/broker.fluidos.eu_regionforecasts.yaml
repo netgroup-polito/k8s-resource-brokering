@@ -1,0 +1,93 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: regionforecasts.broker.fluidos.eu
+spec:
+  group: broker.fluidos.eu
+  names:
+    kind: RegionForecast
+    listKind: RegionForecastList
+    plural: regionforecasts
+    singular: regionforecast
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.region
+      name: Region
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          RegionForecast is the Schema for the regionforecasts API.
+          It caches per-region carbon intensity and energy price forecast data.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RegionForecastSpec defines the desired state of RegionForecast
+            properties:
+              carbonIntensity:
+                description: CarbonIntensity is the 24-hour carbon intensity forecast
+                  in gCO2eq/kWh
+                items:
+                  type: integer
+                type: array
+              cost:
+                description: Cost is the 24-hour day-ahead energy price forecast
+                items:
+                  type: number
+                type: array
+              costUnit:
+                description: CostUnit is the currency unit for cost values (e.g. "EUR/MWh",
+                  "USD/MWh")
+                type: string
+              lastUpdateCarbon:
+                description: LastUpdateCarbon is when this forecast was last fetched
+                  from the carbon intensity service
+                format: date-time
+                type: string
+              lastUpdateCost:
+                description: LastUpdateCost is when the cost forecast was last fetched
+                format: date-time
+                type: string
+              region:
+                description: Region is the region code (e.g. "LOM", "QC", "CA")
+                type: string
+            required:
+            - region
+            type: object
+          status:
+            description: RegionForecastStatus defines the observed state of RegionForecast
+            properties:
+              lastUpdateTime:
+                description: LastUpdateTime is when this CRD was last reconciled
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

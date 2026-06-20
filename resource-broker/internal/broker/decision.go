@@ -13,8 +13,9 @@ import (
 
 // DecisionEngine selects the best cluster for resource allocation
 type DecisionEngine struct {
-	Client     client.Client
-	MockEcoURL string // URL for the mock-eco carbon intensity service
+	Client          client.Client
+	MockEcoURL      string // URL for the mock-eco carbon intensity service
+	MockCurrencyURL string // URL for the mock-currency exchange rates service
 }
 
 // ScoredCluster associates a cluster with its computed score and whether the latency is actual
@@ -66,6 +67,9 @@ func (d *DecisionEngine) RankClusters(
 			return nil, fmt.Errorf("requester location not found for latency policy")
 		}
 	}
+
+	// Update cost and energy price information for all clusters
+	d.updateCosts(ctx, advList)
 
 	for i := range advList.Items {
 		cluster := &advList.Items[i]

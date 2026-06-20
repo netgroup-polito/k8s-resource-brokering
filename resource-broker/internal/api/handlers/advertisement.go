@@ -81,6 +81,18 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			oldCarbonIntensity := latest.Spec.CarbonIntensity
 			oldCarbonLastUpdate := latest.Spec.CarbonLastUpdate
 
+			// Keep a copy of the old cost data (broker-managed parts)
+			var oldCost *brokerv1alpha1.CostInfo
+			if latest.Spec.Cost != nil {
+				oldCost = &brokerv1alpha1.CostInfo{
+					CPUCost:    latest.Spec.Cost.CPUCost,
+					MemoryCost: latest.Spec.Cost.MemoryCost,
+					Currency:   latest.Spec.Cost.Currency,
+					Renewable:  latest.Spec.Cost.Renewable,
+					EnergyCost: latest.Spec.Cost.EnergyCost,
+				}
+			}
+
 			// Convert DTO to k8s ClusterAdvertisement
 			clusterAdvRetry, err2 := dto.ToClusterAdvertisement(&incomingAdv, h.namespace)
 			if err2 != nil {
@@ -96,6 +108,21 @@ func (h *Handler) PostAdvertisement(w http.ResponseWriter, r *http.Request) {
 			if len(latest.Spec.CarbonIntensity) == 0 && len(oldCarbonIntensity) > 0 {
 				latest.Spec.CarbonIntensity = oldCarbonIntensity
 				latest.Spec.CarbonLastUpdate = oldCarbonLastUpdate
+			}
+
+			// Preserve broker-managed EnergyCost and Currency if the agent didn't send its own Cost or sent partial
+			if oldCost != nil && oldCost.EnergyCost > 0 {
+				if latest.Spec.Cost == nil {
+					latest.Spec.Cost = &brokerv1alpha1.CostInfo{
+						EnergyCost: oldCost.EnergyCost,
+						Currency:   oldCost.Currency,
+					}
+				} else if latest.Spec.Cost.EnergyCost == 0 {
+					latest.Spec.Cost.EnergyCost = oldCost.EnergyCost
+					if latest.Spec.Cost.Currency == "" {
+						latest.Spec.Cost.Currency = oldCost.Currency
+					}
+				}
 			}
 
 			// CRITICAL: Subtract Reserved from the Agent's reported Available to prevent

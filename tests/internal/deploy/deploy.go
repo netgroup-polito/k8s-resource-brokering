@@ -22,6 +22,7 @@ func BuildAndLoadImages(rootDir string) error {
 		{"resource-agent", filepath.Join(rootDir, "resource-agent")},
 		{"mock-geo", filepath.Join(rootDir, "mock-geo")},
 		{"mock-eco", filepath.Join(rootDir, "mock-eco")},
+		{"mock-currency", filepath.Join(rootDir, "mock-currency")},
 	}
 	for _, comp := range components {
 		if comp.name == "resource-agent" {
@@ -41,7 +42,7 @@ func BuildAndLoadImages(rootDir string) error {
 
 		fmt.Printf("Loading image %s into clusters...\n", comp.name)
 		var clusters []string
-		if comp.name == "resource-broker" || comp.name == "mock-geo" || comp.name == "mock-eco" {
+		if comp.name == "resource-broker" || comp.name == "mock-geo" || comp.name == "mock-eco" || comp.name == "mock-currency" {
 			clusters = []string{cluster.BrokerCluster}
 		} else if comp.name == "resource-agent" {
 			clusters = []string{cluster.Agent1Cluster, cluster.Agent2Cluster, cluster.Agent3Cluster}
@@ -103,6 +104,16 @@ func DeployBroker(rootDir string) error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to deploy mock-eco: %w", err)
+	}
+
+	// Deploy mock-currency
+	fmt.Println("Deploying mock-currency...")
+	mockCurrencyManifestPath := filepath.Join(rootDir, "mock-currency", "deploy", "manifests.yaml")
+	cmd = exec.Command("kubectl", "apply", "-f", mockCurrencyManifestPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy mock-currency: %w", err)
 	}
 
 	// Restart deployment to ensure new image is used

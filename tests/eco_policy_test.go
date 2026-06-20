@@ -20,7 +20,7 @@ import (
 //  2. Set requester policy to "eco" by patching the ClusterAdvertisement
 //  3. Create a ResourceRequest on agent-cluster-1
 //  4. Verify reservation is established
-//  5. Check that RegionEcoForecast CRDs were created on the broker
+//  5. Check that RegionForecast CRDs were created on the broker
 //  6. Check that ClusterAdvertisements have CarbonIntensity populated
 //  7. Verify the candidate info mentions carbonIntensity
 //
@@ -149,24 +149,24 @@ func TestEcoPolicyFlow(t *testing.T) {
 	t.Logf("✅ Reservation established! Target: %s", targetClusterID)
 
 	// ========================================================================
-	// Step 5: Check RegionEcoForecast CRDs on broker
+	// Step 5: Check RegionForecast CRDs on broker
 	// ========================================================================
-	t.Log("Step 5: Checking RegionEcoForecast CRDs on broker...")
-	forecastList := &brokerv1alpha1.RegionEcoForecastList{}
+	t.Log("Step 5: Checking RegionForecast CRDs on broker...")
+	forecastList := &brokerv1alpha1.RegionForecastList{}
 	err = retry(6, 5*time.Second, func() error {
 		if err := brokerClient.List(ctx, forecastList); err != nil {
 			return err
 		}
 		if len(forecastList.Items) == 0 {
-			return fmt.Errorf("no RegionEcoForecast CRDs found yet")
+			return fmt.Errorf("no RegionForecast CRDs found yet")
 		}
 		return nil
 	})
 	if err != nil {
-		t.Logf("WARNING: No RegionEcoForecast CRDs found: %v", err)
+		t.Logf("WARNING: No RegionForecast CRDs found: %v", err)
 		t.Log("This may indicate mock-eco is not deployed or broker lacks --mock-eco-url")
 	} else {
-		t.Logf("Found %d RegionEcoForecast(s):", len(forecastList.Items))
+		t.Logf("Found %d RegionForecast(s):", len(forecastList.Items))
 		for _, f := range forecastList.Items {
 			valueCount := len(f.Spec.CarbonIntensity)
 			firstVal := 0
@@ -178,7 +178,7 @@ func TestEcoPolicyFlow(t *testing.T) {
 				f.Spec.Region,
 				valueCount,
 				firstVal,
-				f.Spec.LastUpdate.Time.Format(time.RFC3339))
+				f.Spec.LastUpdateCarbon.Time.Format(time.RFC3339))
 		}
 	}
 
@@ -222,7 +222,7 @@ func TestEcoPolicyFlow(t *testing.T) {
 	// ========================================================================
 	t.Log("Step 7: Final state summary")
 	t.Logf("  Reservation target: %s", targetClusterID)
-	t.Logf("  RegionEcoForecasts: %d", len(forecastList.Items))
+	t.Logf("  RegionForecasts: %d", len(forecastList.Items))
 
 	// Verify we got a reservation
 	if targetClusterID == "" {

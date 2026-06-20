@@ -20,20 +20,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// RegionEcoForecastSpec defines the desired state of RegionEcoForecast
-type RegionEcoForecastSpec struct {
+// RegionForecastSpec defines the desired state of RegionForecast
+type RegionForecastSpec struct {
 	// Region is the region code (e.g. "LOM", "QC", "CA")
 	Region string `json:"region"`
 
-	// CarbonIntensity is the 24-hour carbon intensity forecast in gCO2eq/kWh
-	CarbonIntensity []int `json:"carbonIntensity"`
+	// --- Carbon fields ---
 
-	// LastUpdate is when this forecast was last fetched from the carbon intensity service
-	LastUpdate metav1.Time `json:"lastUpdate"`
+	// CarbonIntensity is the 24-hour carbon intensity forecast in gCO2eq/kWh
+	CarbonIntensity []int `json:"carbonIntensity,omitempty"`
+
+	// LastUpdateCarbon is when this forecast was last fetched from the carbon intensity service
+	LastUpdateCarbon metav1.Time `json:"lastUpdateCarbon,omitempty"`
+
+	// --- Cost fields ---
+
+	// Cost is the 24-hour day-ahead energy price forecast
+	Cost []float64 `json:"cost,omitempty"`
+
+	// CostUnit is the currency unit for cost values (e.g. "EUR/MWh", "USD/MWh")
+	CostUnit string `json:"costUnit,omitempty"`
+
+	// LastUpdateCost is when the cost forecast was last fetched
+	LastUpdateCost metav1.Time `json:"lastUpdateCost,omitempty"`
 }
 
-// RegionEcoForecastStatus defines the observed state of RegionEcoForecast
-type RegionEcoForecastStatus struct {
+// RegionForecastStatus defines the observed state of RegionForecast
+type RegionForecastStatus struct {
 	// LastUpdateTime is when this CRD was last reconciled
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 }
@@ -44,25 +57,25 @@ type RegionEcoForecastStatus struct {
 // +kubebuilder:printcolumn:name="Region",type=string,JSONPath=`.spec.region`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// RegionEcoForecast is the Schema for the regionecoforecasts API.
-// It caches per-region carbon intensity forecast data fetched from the carbon intensity service.
-type RegionEcoForecast struct {
+// RegionForecast is the Schema for the regionforecasts API.
+// It caches per-region carbon intensity and energy price forecast data.
+type RegionForecast struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   RegionEcoForecastSpec   `json:"spec,omitempty"`
-	Status RegionEcoForecastStatus `json:"status,omitempty"`
+	Spec   RegionForecastSpec   `json:"spec,omitempty"`
+	Status RegionForecastStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// RegionEcoForecastList contains a list of RegionEcoForecast
-type RegionEcoForecastList struct {
+// RegionForecastList contains a list of RegionForecast
+type RegionForecastList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []RegionEcoForecast `json:"items"`
+	Items           []RegionForecast `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&RegionEcoForecast{}, &RegionEcoForecastList{})
+	SchemeBuilder.Register(&RegionForecast{}, &RegionForecastList{})
 }

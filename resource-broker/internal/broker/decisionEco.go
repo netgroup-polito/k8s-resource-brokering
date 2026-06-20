@@ -31,7 +31,7 @@ type carbonForecastResponse struct {
 var ecoWeights = [6]float64{0.40, 0.25, 0.15, 0.10, 0.06, 0.04}
 
 // calculateScoreEco computes a carbon-intensity-based score for the cluster.
-// It uses a RegionEcoForecast CRD as cache, fetching from mock-eco when stale.
+// It uses a RegionForecast CRD as cache, fetching from mock-eco when stale.
 // Returns the weighted average carbon intensity and whether the trend is increasing.
 func (d *DecisionEngine) calculateScoreEco(
 	ctx context.Context,
@@ -57,9 +57,9 @@ func (d *DecisionEngine) calculateScoreEco(
 	}
 	region := cluster.Spec.Location.Region
 
-	// 3. Try to get the RegionEcoForecast CRD
+	// 3. Try to get the RegionForecast CRD
 	forecastName := strings.ToLower(region)
-	forecast := &brokerv1alpha1.RegionEcoForecast{}
+	forecast := &brokerv1alpha1.RegionForecast{}
 	err := d.Client.Get(ctx, types.NamespacedName{
 		Name:      forecastName,
 		Namespace: cluster.Namespace,
@@ -70,14 +70,14 @@ func (d *DecisionEngine) calculateScoreEco(
 	if err != nil {
 		// CRD does not exist — need to create
 		needsFetch = true
-		logger.Info("RegionEcoForecast not found, will fetch from mock-eco",
+		logger.Info("RegionForecast not found, will fetch from mock-eco",
 			"region", region)
-	} else if time.Since(forecast.Spec.LastUpdate.Time) > 1*time.Hour {
+	} else if time.Since(forecast.Spec.LastUpdateCarbon.Time) > 1*time.Hour {
 		// CRD exists but is stale
 		needsFetch = true
-		logger.Info("RegionEcoForecast is stale, will refresh from mock-eco",
+		logger.Info("RegionForecast is stale, will refresh from mock-eco",
 			"region", region,
-			"age", time.Since(forecast.Spec.LastUpdate.Time).Round(time.Second))
+			"age", time.Since(forecast.Spec.LastUpdateCarbon.Time).Round(time.Second))
 	}
 
 	if needsFetch {
@@ -88,36 +88,36 @@ func (d *DecisionEngine) calculateScoreEco(
 				"region", region)
 			// If we have stale data, use it as fallback
 			if err == nil && len(forecast.Spec.CarbonIntensity) > 0 {
-				logger.Info("Using stale RegionEcoForecast as fallback",
+				logger.Info("Using stale RegionForecast as fallback",
 					"region", region)
 			} else {
 				return 999.0, false // No data at all
 			}
 		} else {
-			// Update or create the RegionEcoForecast CRD
+			// Update or create the RegionForecast CRD
 			if err != nil {
 				// Create new
-				forecast = &brokerv1alpha1.RegionEcoForecast{}
+				forecast = &brokerv1alpha1.RegionForecast{}
 				forecast.Name = forecastName
 				forecast.Namespace = cluster.Namespace
 				forecast.Spec.Region = region
 				forecast.Spec.CarbonIntensity = values
-				forecast.Spec.LastUpdate = metav1.Now()
+				forecast.Spec.LastUpdateCarbon = metav1.Now()
 
 				if createErr := d.Client.Create(ctx, forecast); createErr != nil {
-					logger.Error(createErr, "Failed to create RegionEcoForecast", "region", region)
+					logger.Error(createErr, "Failed to create RegionForecast", "region", region)
 				} else {
-					logger.Info("Created RegionEcoForecast", "region", region, "values", len(values))
+					logger.Info("Created RegionForecast", "region", region, "values", len(values))
 				}
 			} else {
 				// Update existing
 				forecast.Spec.CarbonIntensity = values
-				forecast.Spec.LastUpdate = metav1.Now()
+				forecast.Spec.LastUpdateCarbon = metav1.Now()
 
 				if updateErr := d.Client.Update(ctx, forecast); updateErr != nil {
-					logger.Error(updateErr, "Failed to update RegionEcoForecast", "region", region)
+					logger.Error(updateErr, "Failed to update RegionForecast", "region", region)
 				} else {
-					logger.Info("Updated RegionEcoForecast", "region", region, "values", len(values))
+					logger.Info("Updated RegionForecast", "region", region, "values", len(values))
 				}
 			}
 		}
@@ -127,7 +127,7 @@ func (d *DecisionEngine) calculateScoreEco(
 	if len(forecast.Spec.CarbonIntensity) > 0 {
 		carbonValues := make([]int, len(forecast.Spec.CarbonIntensity))
 		copy(carbonValues, forecast.Spec.CarbonIntensity)
-		lastUpdate := forecast.Spec.LastUpdate
+		lastUpdate := forecast.Spec.LastUpdateCarbon
 
 		go func(clusterName, ns string, values []int, lu metav1.Time) {
 			bgCtx := context.Background()

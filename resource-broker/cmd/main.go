@@ -70,6 +70,7 @@ func main() {
 	var httpCertPath string
 	var httpNamespace string
 	var mockEcoURL string
+	var mockCurrencyURL string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&brokerInterface, "broker-interface", "kubernetes",
@@ -79,6 +80,7 @@ func main() {
 	flag.StringVar(&httpCertPath, "http-cert-path", "/etc/broker/certs", "Path to TLS certificates for HTTP API (only used when broker-interface=http)")
 	flag.StringVar(&httpNamespace, "http-namespace", "default", "Namespace for ClusterAdvertisements and Reservations")
 	flag.StringVar(&mockEcoURL, "mock-eco-url", "http://mock-eco:8081", "URL for the mock-eco carbon intensity service (used by eco policy)")
+	flag.StringVar(&mockCurrencyURL, "mock-currency-url", "http://mock-currency:8082", "URL for the mock-currency exchange rates service (used by cost/eco policies)")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -204,8 +206,9 @@ func main() {
 
 	// Initialize decision engine for reservation controller
 	decisionEngine := &broker.DecisionEngine{
-		Client:     mgr.GetClient(),
-		MockEcoURL: mockEcoURL,
+		Client:          mgr.GetClient(),
+		MockEcoURL:      mockEcoURL,
+		MockCurrencyURL: mockCurrencyURL,
 	}
 
 	//setting up the Reservation controller (it handles the Reservations)
